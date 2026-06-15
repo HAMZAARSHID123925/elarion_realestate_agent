@@ -1,7 +1,8 @@
 import logging
 from typing import Dict, Any
 from pydantic import BaseModel, Field
-from langchain_openai import ChatOpenAI
+# from langchain_openai import ChatOpenAI
+from langchain_groq import ChatGroq
 from langchain_core.messages import AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
@@ -46,7 +47,9 @@ def intent_node(state: Dict[str, Any]) -> Dict[str, Any]:
         return {"messages": [AIMessage(content="Hello! I'm your professional real estate assistant. How can I help you today?")]}
 
     try:
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+        # llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+        llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+
         
         # Extract information from the latest user message
         latest_message = messages[-1].content if messages[-1].type == "human" else ""

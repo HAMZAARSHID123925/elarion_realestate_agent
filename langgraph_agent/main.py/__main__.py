@@ -11,7 +11,7 @@ from app.graph import graph
 
 def main():
     # Load API key from .env (the one in the root or main.py folder)
-    # We will try the root first, then fall back
+    # We wilPl try the root first, then fall back
     root_env = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
     if os.path.exists(root_env):
         load_dotenv(root_env)
