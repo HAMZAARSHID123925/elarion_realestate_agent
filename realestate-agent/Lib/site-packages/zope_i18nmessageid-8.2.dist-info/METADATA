@@ -1,0 +1,81 @@
+Metadata-Version: 2.4
+Name: zope.i18nmessageid
+Version: 8.2
+Summary: Message Identifiers for internationalization
+Author-email: Zope Foundation and contributors <zope-dev@zope.dev>
+Maintainer-email: Plone Foundation and contributors <zope-dev@zope.dev>
+License-Expression: ZPL-2.1
+Project-URL: Documentation, https://zopei18nmessageid.readthedocs.io
+Project-URL: Issues, https://github.com/zopefoundation/zope.i18nmessageid/issues
+Project-URL: Source, https://github.com/zopefoundation/zope.i18nmessageid
+Project-URL: Changelog, https://github.com/zopefoundation/zope.i18nmessageid/blob/master/CHANGES.rst
+Keywords: zope,i18n,message,factory
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Environment :: Web Environment
+Classifier: Framework :: Zope :: 3
+Classifier: Intended Audience :: Developers
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Programming Language :: Python :: Implementation :: CPython
+Classifier: Programming Language :: Python :: Implementation :: PyPy
+Classifier: Topic :: Internet :: WWW/HTTP
+Requires-Python: >=3.10
+Description-Content-Type: text/x-rst
+License-File: LICENSE.txt
+Requires-Dist: zope.interface
+Provides-Extra: docs
+Requires-Dist: Sphinx; extra == "docs"
+Requires-Dist: furo; extra == "docs"
+Provides-Extra: test
+Requires-Dist: coverage; extra == "test"
+Requires-Dist: zope.testrunner>=6.4; extra == "test"
+Provides-Extra: testing
+Requires-Dist: coverage; extra == "testing"
+Requires-Dist: zope.testrunner>=6.4; extra == "testing"
+Dynamic: license-file
+
+``zope.i18nmessageid``
+======================
+
+.. image:: https://img.shields.io/pypi/v/zope.i18nmessageid.svg
+    :target: https://pypi.python.org/pypi/zope.i18nmessageid/
+    :alt: Latest Version
+
+.. image:: https://github.com/zopefoundation/zope.i18nmessageid/actions/workflows/tests.yml/badge.svg
+        :target: https://github.com/zopefoundation/zope.i18nmessageid/actions/workflows/tests.yml
+        
+.. image:: https://readthedocs.org/projects/zopei18nmessageid/badge/?version=latest
+        :target: http://zopei18nmessageid.readthedocs.org/en/latest/
+        :alt: Documentation Status
+
+To translate any text, we must be able to discover the source domain
+of the text.  A source domain is an identifier that identifies a
+project that produces program source strings.  Source strings occur as
+literals in python programs, text in templates, and some text in XML
+data.  The project implies a source language and an application
+context.
+
+We can think of a source domain as a collection of messages and
+associated translation strings.
+
+We often need to create unicode strings that will be displayed by
+separate views.  The view cannot translate the string without knowing
+its source domain.  A string or unicode literal carries no domain
+information, therefore we use messages.  Messages are unicode strings
+which carry a translation source domain and possibly a default
+translation.  They are created by a message factory. The message
+factory is created by calling ``MessageFactory`` with the source
+domain.
+
+This package provides facilities for *declaring* such messages within
+program source text;  translation of the messages is the responsiblitiy
+of the 'zope.i18n' package.
+
+Please see http://zopei18nmessageid.readthedocs.org/en/latest/ for the documentation.
