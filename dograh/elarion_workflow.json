@@ -1,0 +1,30 @@
+{
+  "nodes": [
+    {
+      "id": "1",
+      "type": "startCall",
+      "position": {
+        "x": 100,
+        "y": 100
+      },
+      "data": {
+        "name": "start call",
+        "greeting_type": "text",
+        "greeting_text": "Welcome to Elarion Real Estate. How can I help you today?",
+        "prompt": "You are Elarion, a professional real estate voice assistant.\n\nCRITICAL RULE:\nYou MUST use the `ask_elarion_agent` tool to process ANY and ALL user queries about properties. Do NOT try to answer yourself. Pass the user's exact speech to the `ask_elarion_agent` tool as the `message` parameter.\n\nWhen the tool returns a `voice_response`, read it back to the user verbatim.",
+        "ai_model": {
+          "provider": "groq",
+          "model": "llama-3.3-70b-versatile"
+        },
+        "webrtc_enabled": true,
+        "allow_interrupt": true
+      }
+    }
+  ],
+  "edges": [],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  }
+}

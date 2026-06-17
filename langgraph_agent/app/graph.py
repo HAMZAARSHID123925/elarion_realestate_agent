@@ -6,6 +6,7 @@ from langgraph.graph import StateGraph, END
 from app.state import ConversationState
 from app.nodes.intent_node import intent_node
 from app.nodes.property_search_node import property_search_node
+from app.nodes.response_formatter_node import response_formatter_node
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ def build_graph():
     # 1. Register existing nodes
     workflow.add_node("intent_node", intent_node)
     workflow.add_node("property_search_node", property_search_node)
+    workflow.add_node("response_formatter_node", response_formatter_node)
     
     # 2. Entry Point
     workflow.set_entry_point("intent_node")
@@ -47,10 +49,13 @@ def build_graph():
         }
     )
     
-    # 4. After property_search_node, route to END
-    workflow.add_edge("property_search_node", END)
+    # 4. After property_search_node, route to response_formatter_node
+    workflow.add_edge("property_search_node", "response_formatter_node")
     
-    # 5. Compile graph
+    # 5. After response_formatter_node, route to END
+    workflow.add_edge("response_formatter_node", END)
+    
+    # 6. Compile graph
     return workflow.compile()
 
 graph = build_graph()
