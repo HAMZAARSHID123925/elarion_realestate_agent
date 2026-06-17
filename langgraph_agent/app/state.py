@@ -14,3 +14,4 @@ class ConversationState(TypedDict):
     is_conversation_complete: bool
     next_step: Optional[str]
     property_search_result: Optional[dict]
+    voice_response: Optional[str]
