@@ -1,1 +1,0 @@
-"""Telnyx telephony provider tests."""

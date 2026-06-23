@@ -11,9 +11,9 @@ logger = logging.getLogger(__name__)
 class ExtractionSchema(BaseModel):
     """Schema for extracting real estate requirements from user input."""
     user_name: str | None = Field(default=None, description="The name of the user")
-    location: str | None = Field(default=None, description="The city or location the user is interested in")
-    budget: str | None = Field(default=None, description="The budget of the user for the property")
-    property_type: str | None = Field(default=None, description="The type of property, e.g., house, apartment, plot")
+    location: str | None = Field(default=None, description="The city, strictly mapped to one of: Lahore, Islamabad, Karachi, Peshawar. Correct any misspellings (e.g. 'Slavabhat' -> 'Islamabad').")
+    budget: str | None = Field(default=None, description="The budget of the user. IMPORTANT: Convert spoken words to numbers (e.g. 'four hundred' -> '400', 'fifty hundred k' -> '50 lakh').")
+    property_type: str | None = Field(default=None, description="Strictly one of: 'house', 'apartment', 'plot', 'commercial'. Normalize plurals to singular (e.g. 'apartments' -> 'apartment').")
 
 def intent_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -51,26 +51,22 @@ def intent_node(state: Dict[str, Any]) -> Dict[str, Any]:
         llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
 
         
-        # Extract information from the latest user message
-        latest_message = messages[-1].content if messages[-1].type == "human" else ""
+        # Extract information from the ENTIRE conversation history
+        conversation_text = "\n".join([f"{m.type}: {m.content}" for m in messages])
         updates: Dict[str, Any] = {}
         
-        if latest_message:
+        if conversation_text:
             structured_llm = llm.with_structured_output(ExtractionSchema)
             extracted = structured_llm.invoke(
-                f"Extract any real estate requirements from this message. "
-                f"Only extract if explicitly mentioned.\nMessage: {latest_message}"
+                f"Extract any real estate requirements from this conversation history. "
+                f"Only extract if explicitly mentioned.\nConversation:\n{conversation_text}"
             )
             
-            # Map extracted values to the state updates if they are new
-            if extracted.user_name and not state.get("user_name"):
-                updates["user_name"] = extracted.user_name
-            if extracted.location and not state.get("location"):
-                updates["location"] = extracted.location
-            if extracted.budget and not state.get("budget"):
-                updates["budget"] = extracted.budget
-            if extracted.property_type and not state.get("property_type"):
-                updates["property_type"] = extracted.property_type
+            # Map extracted values to the state updates
+            if extracted.user_name: updates["user_name"] = extracted.user_name
+            if extracted.location: updates["location"] = extracted.location
+            if extracted.budget: updates["budget"] = extracted.budget
+            if extracted.property_type: updates["property_type"] = extracted.property_type
 
         # Assess current completeness
         current_name = updates.get("user_name", state.get("user_name"))
@@ -97,7 +93,9 @@ def intent_node(state: Dict[str, Any]) -> Dict[str, Any]:
              "You are a professional and polite real estate receptionist. "
              "A user wants help with real estate. You need to ask them about their: {field_to_ask}. "
              "Ask ONLY for this specific information. Do not ask multiple questions at once. "
-             "Maintain a natural, helpful conversation based on the context so far."),
+             "Maintain a natural, helpful conversation based on the context so far. "
+             "CRITICAL: Your output will be spoken aloud by a voice agent. "
+             "Do NOT use markdown (*, #, -), bullet points, or symbols. Write exactly as you would speak."),
             MessagesPlaceholder(variable_name="messages")
         ])
         
