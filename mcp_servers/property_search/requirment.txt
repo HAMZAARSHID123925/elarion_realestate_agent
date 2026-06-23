@@ -1,0 +1,2 @@
+# MCP Property Search Server — Requirements
+fastmcp>=0.1.0
