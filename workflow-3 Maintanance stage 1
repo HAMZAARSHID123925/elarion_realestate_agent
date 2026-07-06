@@ -1,0 +1,41 @@
+# Maintenance Workflow Stage 1 Summary
+
+We have successfully built and verified **Stage 1** of Workflow #1 (Maintenance Request Automation), preserving the existing orchestration directory structure which you correctly identified as best practice.
+
+## Directory Structure & Files
+
+The workflow is located in `app/orchestrator/maintenance/` to keep it modular but integrated with your existing orchestration layer:
+- `app/orchestrator/maintenance/state.py`: Defines the `MaintenanceState` including the conversation history and mandatory slots (`tenant_identity`, `property_unit`, `issue_category`, `issue_description`, `urgency`, `permission_to_enter`, `pets_present`).
+- `app/orchestrator/maintenance/nodes.py`: Contains all the node functions (Receptionist, Issue Collection, Validation, Priority Detection, Escalation, Request Builder, Ticket Creation, and Response Generator).
+- `app/orchestrator/maintenance/graph.py`: Wires the nodes together using standard `StateGraph` conditional edges and includes `MemorySaver` to persist state across turns.
+- `test_maintenance_stage1.py`: The root testing script that runs the 3 fake multi-turn conversations.
+
+## Implementation Details
+
+1. **Receptionist Node**: 
+   - Uses an in-memory dictionary (`FAKE_TENANT_DB`) to mock tenant identification based on a simulated `user_id`.
+   - Fills `tenant_identity` and `property_unit` automatically if the user is recognized.
+2. **Issue Collection Node**:
+   - Reuses your core extraction logic via `llama-3.3-70b-versatile`.
+   - Passes the `current_slots` dictionary and the full conversation history to the LLM so it only extracts **new** or **corrected** information.
+   - Gracefully defaults to "unconfirmed" if `permission_to_enter` or `pets_present` is asked but not clearly answered.
+   - Calculates the list of `missing_slots` based on the 7 required fields.
+3. **Validation Node**:
+   - If `missing_slots` is not empty, generates a natural language question (e.g. "Do we have your permission to enter...") and loops back to the user (the graph reaches `END` for this turn, preserving state).
+4. **Priority Detection Node**:
+   - Scans the *full* text of all user messages for hardcoded emergency keywords (like "gas smell", "active flooding", "fire", etc.).
+   - This ensures that if the keyword was mentioned in Turn 1, it isn't forgotten by Turn 3.
+   - If a keyword matches, forces `urgency="EMERGENCY"`, completely overriding any LLM evaluation.
+5. **Escalation & Ticket Builder Nodes**:
+   - If `EMERGENCY`, logs a mock escalation record and prepares a hand-off message. Live transfer is logged as a `TODO`.
+   - Otherwise, proceeds to print out the final mock Ticket JSON Payload.
+
+## Validation Results
+
+We executed `test_maintenance_stage1.py` successfully and verified all 3 test scenarios:
+- **Test 1 (Known User, Multi-turn)**: Successfully tracked state progressively across 3 turns without losing slots. Automatically filled the tenant details via the mock Receptionist DB.
+- **Test 2 (Unknown User, Correction)**: The Receptionist didn't know the caller, so the Validation Node gracefully prompted for their name. When the user corrected the issue type from "electrical" to "appliance", the state accurately reflected the new value.
+- **Test 3 (Emergency Override)**: The user mentioned "active flooding" in Turn 1. Even though the LLM initially labeled it just "high" urgency, the Priority Detection node hard-overrode it to `EMERGENCY` and routed to the Escalation Node successfully.
+
+---
+Please review the output from `python test_maintenance_stage1.py` and let me know if you are ready to proceed to Stage 2!

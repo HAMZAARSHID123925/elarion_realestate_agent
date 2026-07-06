@@ -1,0 +1,135 @@
+# Stage 3 Walkthrough — Real Postgres via MCP
+
+## What Was Built
+
+### Schema (`init_db.py`)
+Six tables, all created fresh and seeded on every `python init_db.py` run:
+
+| Table | Key Columns |
+|---|---|
+| `properties` | property_id, address |
+| `units` | unit_id, **property_id (FK)**, unit_number |
+| `tenants` | tenant_id, phone_or_email, name, **unit_id (FK)** |
+| `maintenance_tickets` | ticket_id, tenant_id, property_id, unit_id, category, description, urgency, permission_to_enter, pets_present, **status='OPEN'**, source_channel, created_by, **idempotency_key (UNIQUE)** |
+| `ticket_status_log` | ticket_id, old_status, new_status, timestamp |
+| `audit_logs` | log_id, action, details, actor, before_state (JSONB), after_state (JSONB), timestamp |
+
+> [!IMPORTANT]
+> **Join logic (confirmed):** `tenants.unit_id → units.unit_id → units.property_id → properties.property_id`.  
+> Tenants link to `unit_id` only. `property_id` on a ticket is resolved inside `create_ticket` by querying `units`, never fabricated.
+
+---
+
+### MCP Server (`mcp_server.py`)
+- Uses `psycopg.AsyncConnection` (per-call, no pool) to avoid Windows `ProactorEventLoop` incompatibility.
+- Forces `WindowsSelectorEventLoopPolicy` at module import time before `FastMCP` runs.
+- **Tools exposed:**
+  - `lookup_tenant(phone_or_email)` — tenant → unit join, returns real DB IDs
+  - `lookup_property(unit_id)` — unit → property join
+  - `create_ticket(...)` — idempotency + duplicate check + insert + audit log, all in one transaction
+- `write_audit_log` is **internal only** — the graph never calls it directly.
+
+### LangGraph Nodes (`nodes.py`)
+- `receptionist_node` stores both display name (`tenant_identity`) and real DB foreign keys (`db_tenant_id`, `db_unit_id`) in state.
+- `request_builder_node` passes `db_tenant_id`/`db_unit_id` to the ticket payload, falling back to conversation-extracted values for unknown callers.
+- `ticket_creation_node` generates a `uuid4` idempotency key client-side and calls `create_ticket` over the MCP protocol — never imports or calls the server function directly.
+
+---
+
+## Test Results
+
+### Test 1 — Clean single-issue, all slots provided ✅
+```
+TKT-356d95a0 | T-100 | U-4B | plumbing | low | OPEN
+audit: log_id=1 | CREATE_TICKET_SUCCESS
+```
+
+### Test 2 — Missing urgency, graph asks for it ✅
+```
+Turn 1: User gives HVAC issue but no urgency → Agent asks "How urgent is this?"
+Turn 2: User says "medium" → Ticket created
+TKT-c78bc61b | T-100 | U-4B | HVAC | medium | OPEN
+audit: log_id=2 | CREATE_TICKET_SUCCESS
+```
+
+### Test 3 — Emergency keyword, instant escalation ✅
+```
+"active flooding" detected on Turn 1 → routed to escalation_node immediately
+No ticket created — DB check confirmed 0 new rows for U-12
+```
+
+### Test 4 — Duplicate ticket rejected ✅
+```
+Attempted to create a second plumbing ticket for U-4B (already had TKT-356d95a0 open)
+MCP response: {"status": "duplicate", "existing_ticket_id": "TKT-356d95a0",
+               "message": "...Would you like to attach a note to it instead?"}
+audit: log_id=3 | CREATE_TICKET_DUPLICATE
+```
+
+### Test 5 — Unknown caller, graceful fallback ✅
+```
+nobody@nowhere.com not found in DB → graph collects name/unit via conversation
+Alex Park, unit 99 → ticket created with conversation-gathered values (no DB FK)
+```
+
+---
+
+## Idempotency Verification ✅
+
+```
+Original ticket_id from Test 1: TKT-356d95a0
+Replay with same idempotency_key: idem-b0a7ed49-...
+
+Replay response:
+  {"status": "success", "idempotent": true, "ticket": {"ticket_id": "TKT-356d95a0", ...}}
+
+Ticket count BEFORE replay: 3
+Ticket count AFTER  replay: 3
+[PASS] Same ticket_id returned. No new row created.
+```
+
+---
+
+## Manual Verification Queries
+
+Run these yourself in any Postgres client (or `psql`):
+
+```sql
+-- All maintenance tickets
+SELECT ticket_id, tenant_id, unit_id, category, urgency, status, created_at
+FROM maintenance_tickets
+ORDER BY created_at;
+
+-- All audit log entries
+SELECT log_id, action, actor, details, before_state, after_state, timestamp
+FROM audit_logs
+ORDER BY timestamp;
+
+-- Verify idempotency: count rows per idempotency_key (should always be 1)
+SELECT idempotency_key, COUNT(*) AS row_count
+FROM maintenance_tickets
+GROUP BY idempotency_key
+HAVING COUNT(*) > 1;  -- should return 0 rows
+
+-- Verify property_id resolved correctly via join
+SELECT t.ticket_id, t.unit_id, t.property_id, u.property_id AS unit_property_id
+FROM maintenance_tickets t
+JOIN units u ON u.unit_id = t.unit_id;  -- property_id columns should match
+```
+
+---
+
+## Manual Things To Do
+
+> [!IMPORTANT]
+> 1. **Run `python init_db.py`** once before every clean test run to reset and re-seed the schema. The script drops and recreates all 6 tables.
+> 2. **The `.env` file** at `langgraph_agent/.env` contains both `DATABASE_URL` (Neon) and `GROQ_API_KEY`. Keep it out of source control.
+> 3. **To start the MCP server independently:** run `python mcp_server.py`. It will appear to hang — that is correct for stdio transport. Test it via `python test_mcp_client.py`.
+> 4. **The `channel_binding=require`** in the Neon connection string is set. If you switch Postgres providers, you may need to remove that parameter.
+
+---
+
+## What's NOT Yet Implemented (by design)
+- Vendor assignment, scheduling, invoicing, notifications — out of scope for this workflow slice
+- Live VAPI/WhatsApp/Email channel wiring (Stage 4)
+- Real escalation handoff (currently a console print + state record)

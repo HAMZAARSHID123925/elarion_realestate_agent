@@ -1,0 +1,35 @@
+# Maintenance Workflow Stage 2 Summary
+
+We have successfully built and verified **Stage 2**! We've decoupled the tools from the graph by introducing a real Model Context Protocol (MCP) server boundary over `stdio` using the official Python SDK.
+
+## Deliverables
+
+1. **`mcp_server.py`**:
+   - Built as a standalone `FastMCP` application.
+   - Contains fake in-memory DBs for tenants, properties, tickets, and an internal audit log.
+   - Registers three tools:
+     - `lookup_tenant`: Retrieves tenant identity by phone or email.
+     - `lookup_property`: Retrieves property metadata by unit ID.
+     - `create_ticket`: Creates a ticket with idempotency safety (using a client-supplied key) and active duplicate detection to ensure the same issue isn't repeatedly opened for the same unit.
+     - *(Note: `write_audit_log` is purely internal and not exposed via MCP).*
+   - **Command to run directly (for manual testing/inspection)**: `python mcp_server.py`
+   - *Note: Since this runs over stdio, running it manually will just print a JSON stream awaiting JSON-RPC messages. Do not type random text or you will get JSON parsing errors.*
+
+2. **`app/orchestrator/maintenance/mcp_client.py`**:
+   - Contains a robust `MaintenanceMCPClient` class.
+   - Uses `contextlib.AsyncExitStack` and `mcp.client.stdio` to cleanly manage the lifecycle of the stdio subprocess and the MCP session.
+   - Designed to be safely called across multiple LangGraph nodes (`await mcp_client.connect()`).
+
+3. **`test_mcp_client.py`**:
+   - A standalone script to independently verify the MCP server.
+   - **Command to run**: `python test_mcp_client.py`
+   - **Expected Output**: You should see it successfully connect, list all 3 tools (`lookup_tenant`, `lookup_property`, `create_ticket`), and test `lookup_property` against a fake ID ("U-12") and an invalid ID ("INVALID").
+
+## LangGraph Wiring Updates
+I updated your graph nodes (`nodes.py`) to fully adopt the new MCP boundary:
+- **`receptionist_node`** now calls `mcp_client.call_tool("lookup_tenant", ...)` rather than querying the fake dictionary directly.
+- **`ticket_creation_node`** now calls `mcp_client.call_tool("create_ticket", ...)` using the perfectly aligned Stage 2 payload schema.
+- **Idempotency**: The graph generates a unique `uuid4` idempotency key per workflow invocation, protecting the backend from duplicating tickets if LangGraph retries the node.
+
+## Testing Results
+Running `python test_maintenance_stage1.py` successfully spawned the MCP server subprocess, exchanged JSON-RPC messages across the stdio boundary, and printed the real MCP tool responses (`{'status': 'success', 'ticket': {'ticket_id': ...}}`). The graph architecture is now strictly layered and perfectly prepped for Stage 3!
