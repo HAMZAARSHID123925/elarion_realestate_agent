@@ -36,7 +36,16 @@ async def ticket_creation_node(state: MaintenanceState) -> Dict[str, Any]:
             result = json.loads(result_json)
             print(f"  [MCP RESPONSE] -> {result}")
             if result.get("status") in ["success", "duplicate"]:
-                return {"ticket_creation_status": "success", "ticket_creation_error": None}
+                ticket = result.get("ticket", {})
+                out = {"ticket_creation_status": "success", "ticket_creation_error": None}
+                # Carry ticket_id + property_id forward so downstream vendor matching
+                # doesn't have to re-derive them.
+                created_ticket_id = ticket.get("ticket_id") or result.get("existing_ticket_id")
+                if created_ticket_id:
+                    out["created_ticket_id"] = created_ticket_id
+                if ticket.get("property_id"):
+                    out["db_property_id"] = ticket.get("property_id")
+                return out
             else:
                 error_msg = result.get("message") or result.get("error") or "Unknown error"
                 print(f"  [MCP ERROR from Server] -> {error_msg}")

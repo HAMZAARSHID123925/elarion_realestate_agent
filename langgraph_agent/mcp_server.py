@@ -268,6 +268,234 @@ async def create_ticket(
         return json.dumps({"status": "error", "message": f"Server error: {str(e)}"})
 
 
+# ── Internal helper — log one assignment attempt row ──────────────────
+async def _log_attempt(cur, ticket_id: str, vendor_id, strategy: str, result: str, reason: str) -> None:
+    await cur.execute(
+        """
+        INSERT INTO assignment_attempts (ticket_id, vendor_id, strategy_used, result, reason)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
+        (ticket_id, vendor_id, strategy, result, reason),
+    )
+    print(f"[ASSIGNMENT ATTEMPT] {strategy} -> {result} ({reason})", file=sys.stderr)
+
+
+# ── Tool: assign_vendor ─────────────────────────────────────────────────
+@mcp.tool()
+async def assign_vendor(
+    ticket_id:   str,
+    category:    str,
+    property_id: str,
+    urgency:     str,
+) -> str:
+    """
+    Run the vendor assignment routing engine for a ticket, following strategy order:
+
+    1. Preferred/Contracted  — vendor with is_contracted=TRUE for this property_id + category
+    2. Emergency priority    — if urgency=EMERGENCY, restrict candidate pool to accepts_emergency=TRUE
+    3. Skill filter          — category match is mandatory at every step
+    4. Location-based        — rank remaining candidates by service_area match to property_id
+    5. Availability filter   — deprioritize/exclude vendors where active_jobs >= capacity
+    6. Fallback/On-call pool — vendors with service_area='FALLBACK_POOL'
+    7. Exhausted              — no candidate found anywhere -> NEEDS_MANUAL_ASSIGNMENT
+
+    Every step taken is written to assignment_attempts for audit/coordinator visibility.
+    Does NOT commit the assignment — only proposes a candidate. Call commit_assignment
+    after human approval.
+    """
+    try:
+        db_pool = await get_pool()
+        async with db_pool.connection() as conn:
+            async with conn.cursor() as cur:
+
+                # ── Strategy 1: Preferred / Contracted vendor ──────────────
+                await cur.execute(
+                    """
+                    SELECT vendor_id, name, phone, category, service_area,
+                           accepts_emergency, capacity, active_jobs
+                    FROM   vendors
+                    WHERE  contracted_property_id = %s
+                      AND  category = %s
+                      AND  is_contracted = TRUE
+                      AND  active = TRUE
+                    """,
+                    (property_id, category),
+                )
+                contracted = await cur.fetchone()
+
+                if contracted and contracted[7] < contracted[6]:
+                    # capacity check (active_jobs < capacity) — otherwise fall through
+                    if not (urgency == "EMERGENCY" and not contracted[5]):
+                        await _log_attempt(cur, ticket_id, contracted[0], "CONTRACTED", "MATCHED",
+                                            "Contracted vendor available and within capacity")
+                        await conn.commit()
+                        return json.dumps({
+                            "status": "matched", "strategy": "CONTRACTED",
+                            "vendor": {"vendor_id": contracted[0], "name": contracted[1],
+                                       "phone": contracted[2], "category": contracted[3]},
+                        })
+
+                if contracted:
+                    await _log_attempt(cur, ticket_id, contracted[0], "CONTRACTED", "SKIPPED",
+                                        "Contracted vendor over capacity or cannot take emergency job")
+                else:
+                    await _log_attempt(cur, ticket_id, None, "CONTRACTED", "NO_CANDIDATE",
+                                        "No contracted vendor for this property/category")
+
+                # ── Strategy 3+4+5: Skill filter (always) + Location + Availability ──
+                # Emergency urgency restricts to accepts_emergency=TRUE vendors (Strategy 2)
+                base_query = """
+                    SELECT vendor_id, name, phone, category, service_area,
+                           accepts_emergency, capacity, active_jobs
+                    FROM   vendors
+                    WHERE  category = %s
+                      AND  active = TRUE
+                      AND  service_area = %s
+                      AND  active_jobs < capacity
+                """
+                params = [category, property_id]
+                if urgency == "EMERGENCY":
+                    base_query += " AND accepts_emergency = TRUE"
+                base_query += " ORDER BY active_jobs ASC"
+
+                await cur.execute(base_query, tuple(params))
+                candidates = await cur.fetchall()
+
+                if candidates:
+                    top = candidates[0]
+                    strategy_label = "EMERGENCY_BROADCAST" if urgency == "EMERGENCY" else "LOCATION_BASED"
+                    await _log_attempt(cur, ticket_id, top[0], strategy_label, "MATCHED",
+                                        f"Skill+location+availability match, {len(candidates)} candidate(s) found")
+                    await conn.commit()
+                    return json.dumps({
+                        "status": "matched", "strategy": strategy_label,
+                        "vendor": {"vendor_id": top[0], "name": top[1],
+                                   "phone": top[2], "category": top[3]},
+                    })
+
+                await _log_attempt(cur, ticket_id, None, "LOCATION_BASED", "NO_CANDIDATE",
+                                    "No skilled/available vendor found in service area")
+
+                # ── Strategy 6: Fallback / On-call pool ─────────────────────
+                # Skill filter (category) is ALWAYS applied, even in the fallback pool —
+                # an on-call marketplace vendor still has to actually carry the right skill tag.
+                fallback_query = """
+                    SELECT vendor_id, name, phone, category, service_area,
+                           accepts_emergency, capacity, active_jobs
+                    FROM   vendors
+                    WHERE  service_area = 'FALLBACK_POOL'
+                      AND  category = %s
+                      AND  active = TRUE
+                      AND  active_jobs < capacity
+                """
+                fallback_params = [category]
+                if urgency == "EMERGENCY":
+                    fallback_query += " AND accepts_emergency = TRUE"
+                fallback_query += " ORDER BY active_jobs ASC"
+
+                await cur.execute(fallback_query, tuple(fallback_params))
+                fallback = await cur.fetchone()
+
+                if fallback:
+                    await _log_attempt(cur, ticket_id, fallback[0], "FALLBACK_POOL", "MATCHED",
+                                        "On-call pool vendor assigned")
+                    await conn.commit()
+                    return json.dumps({
+                        "status": "matched", "strategy": "FALLBACK_POOL",
+                        "vendor": {"vendor_id": fallback[0], "name": fallback[1],
+                                   "phone": fallback[2], "category": fallback[3]},
+                    })
+
+                # ── Strategy 7: Exhausted ────────────────────────────────────
+                await _log_attempt(cur, ticket_id, None, "EXHAUSTED", "NO_CANDIDATE",
+                                    "All strategies exhausted, no vendor available")
+                await cur.execute(
+                    "UPDATE maintenance_tickets SET assignment_status = 'NEEDS_MANUAL_ASSIGNMENT' WHERE ticket_id = %s",
+                    (ticket_id,),
+                )
+                await conn.commit()
+
+                # Pull attempt history for the coordinator
+                await cur.execute(
+                    "SELECT strategy_used, result, reason, timestamp FROM assignment_attempts "
+                    "WHERE ticket_id = %s ORDER BY timestamp ASC",
+                    (ticket_id,),
+                )
+                history_rows = await cur.fetchall()
+                history = [
+                    {"strategy": r[0], "result": r[1], "reason": r[2], "timestamp": str(r[3])}
+                    for r in history_rows
+                ]
+
+                return json.dumps({
+                    "status": "needs_manual_assignment",
+                    "strategy": "EXHAUSTED",
+                    "attempt_history": history,
+                })
+
+    except psycopg.Error as e:
+        return json.dumps({"status": "error", "message": f"Database error: {str(e)}"})
+    except Exception as e:
+        return json.dumps({"status": "error", "message": f"Server error: {str(e)}"})
+
+
+# ── Tool: commit_assignment ──────────────────────────────────────────────
+@mcp.tool()
+async def commit_assignment(
+    ticket_id:   str,
+    vendor_id:   str,
+    approved_by: str = "human_coordinator",
+) -> str:
+    """
+    Commit a vendor assignment AFTER human approval.
+    Updates ticket status to ASSIGNED, increments vendor active_jobs, writes audit log.
+    Only call this after the human has explicitly approved the proposed vendor.
+    """
+    try:
+        db_pool = await get_pool()
+        async with db_pool.connection() as conn:
+            async with conn.cursor() as cur:
+
+                await cur.execute(
+                    "SELECT ticket_id, assignment_status FROM maintenance_tickets WHERE ticket_id = %s",
+                    (ticket_id,),
+                )
+                ticket_row = await cur.fetchone()
+                if not ticket_row:
+                    return json.dumps({"status": "error", "message": f"Ticket {ticket_id} not found"})
+
+                before_state = {"assignment_status": ticket_row[1]}
+
+                await cur.execute(
+                    "UPDATE maintenance_tickets SET vendor_id = %s, assignment_status = 'ASSIGNED' "
+                    "WHERE ticket_id = %s",
+                    (vendor_id, ticket_id),
+                )
+                await cur.execute(
+                    "UPDATE vendors SET active_jobs = active_jobs + 1 WHERE vendor_id = %s",
+                    (vendor_id,),
+                )
+
+                after_state = {"ticket_id": ticket_id, "vendor_id": vendor_id, "assignment_status": "ASSIGNED"}
+                await _write_audit_log(
+                    cur,
+                    action="ASSIGN_VENDOR",
+                    details=f"Ticket {ticket_id} assigned to vendor {vendor_id}, approved by {approved_by}",
+                    actor=approved_by,
+                    before_state=before_state,
+                    after_state=after_state,
+                )
+
+                await conn.commit()
+
+            return json.dumps({"status": "success", "ticket_id": ticket_id,
+                                "vendor_id": vendor_id, "assignment_status": "ASSIGNED"})
+    except psycopg.Error as e:
+        return json.dumps({"status": "error", "message": f"Database error: {str(e)}"})
+    except Exception as e:
+        return json.dumps({"status": "error", "message": f"Server error: {str(e)}"})
+
+
 # ── Entry point ───────────────────────────────────────────────────────
 if __name__ == "__main__":
     mcp.run(transport="stdio")

@@ -40,7 +40,20 @@ MANDATORY_SLOTS = [
 class MaintenanceExtraction(BaseModel):
     tenant_identity: str | None = Field(default=None, description="The name of the tenant. Null if not mentioned.")
     property_unit: str | None = Field(default=None, description="The property or unit number. Null if not mentioned.")
-    issue_category: str | None = Field(default=None, description="The category of the maintenance issue (e.g., plumbing, electrical). Null if not mentioned.")
+    issue_category: Literal["plumbing", "electrical", "hvac", "general", "security"] | None = Field(
+        default=None,
+        description=(
+            "The category of the maintenance issue. Must be exactly one of: "
+            "'plumbing' (leaks, pipes, drains, toilets, sinks, water heaters), "
+            "'electrical' (outlets, wiring, breakers, lighting), "
+            "'hvac' (heating, cooling, AC, furnace, ventilation), "
+            "'security' (locks, doors, windows, alarms, access control), "
+            "'general' (anything else — cabinets, appliances, cosmetic, structural, pests, misc repairs). "
+            "Always map the tenant's description to the closest matching category, even if their "
+            "wording is different (e.g. 'my cabinet door fell off' -> 'general'). Null only if no "
+            "issue has been described yet at all."
+        ),
+    )
     issue_description: str | None = Field(default=None, description="Detailed description of the problem. Null if not mentioned.")
     urgency: Literal["low", "medium", "high"] | None = Field(default=None, description="The urgency of the request. Null if not mentioned.")
     permission_to_enter: Literal["yes", "no", "unconfirmed"] | None = Field(default=None, description="Whether the tenant grants permission to enter. If asked but not clearly answered, use 'unconfirmed'. Null if not mentioned.")
