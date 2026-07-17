@@ -32,10 +32,13 @@ def parse_budget(budget_str: str) -> Optional[float]:
     except ValueError:
         return None
 
-def search_properties_db(location: str, property_type: str, budget: str) -> list:
+def search_properties_db(location: str, property_type: str, budget: str, bedrooms: Optional[int] = None) -> list:
     """
     Query SQLite for properties matching filters.
     Uses parameterized queries (prevents SQL injection — production best practice).
+
+    bedrooms is optional and defaults to None (no filter applied), so every
+    existing caller that doesn't pass it keeps working unchanged.
     """
     budget_value = parse_budget(budget)
 
@@ -43,23 +46,25 @@ def search_properties_db(location: str, property_type: str, budget: str) -> list
     try:
         cursor = conn.cursor()
 
+        query = """
+            SELECT * FROM properties
+            WHERE LOWER(city) LIKE LOWER(?)
+            AND LOWER(property_type) LIKE LOWER(?)
+            AND is_available = TRUE
+        """
+        params = [f"%{location}%", f"%{property_type}%"]
+
         if budget_value is not None:
-            cursor.execute("""
-                SELECT * FROM properties
-                WHERE LOWER(city) LIKE LOWER(?)
-                AND LOWER(property_type) LIKE LOWER(?)
-                AND price_lakhs <= ?
-                AND is_available = TRUE
-                ORDER BY price_lakhs ASC
-            """, (f"%{location}%", f"%{property_type}%", budget_value))
-        else:
-            cursor.execute("""
-                SELECT * FROM properties
-                WHERE LOWER(city) LIKE LOWER(?)
-                AND LOWER(property_type) LIKE LOWER(?)
-                AND is_available = TRUE
-                ORDER BY price_lakhs ASC
-            """, (f"%{location}%", f"%{property_type}%"))
+            query += " AND price_lakhs <= ?"
+            params.append(budget_value)
+
+        if bedrooms is not None:
+            query += " AND bedrooms >= ?"
+            params.append(bedrooms)
+
+        query += " ORDER BY price_lakhs ASC"
+
+        cursor.execute(query, params)
 
         rows = cursor.fetchall()
         # Convert sqlite3.Row objects to plain dicts

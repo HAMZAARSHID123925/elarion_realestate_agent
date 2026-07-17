@@ -62,11 +62,12 @@ async def clear_tickets():
     """Clear all tickets and audit logs before each run for a clean state."""
     async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
         async with conn.cursor() as cur:
+            await cur.execute("DELETE FROM assignment_attempts")
             await cur.execute("DELETE FROM ticket_status_log")
             await cur.execute("DELETE FROM maintenance_tickets")
             await cur.execute("DELETE FROM audit_logs")
         await conn.commit()
-    print("  [DB] Cleared tickets, status_log, and audit_logs for fresh test run.")
+    print("  [DB] Cleared tickets, status_log, assignment_attempts, and audit_logs for fresh test run.")
 
 # ── Conversation runner ───────────────────────────────────────────────
 

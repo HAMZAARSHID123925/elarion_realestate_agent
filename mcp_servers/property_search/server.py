@@ -171,7 +171,7 @@ mcp = FastMCP("Elarion Property Search Server")
 
 # ─── Tool 1: Search Properties ────────────────────────────────────────────────
 @mcp.tool()
-def search_properties(location: str, property_type: str, budget: str) -> dict:
+def search_properties(location: str, property_type: str, budget: str, bedrooms: int = None) -> dict:
     """
     Search for available properties matching the user's requirements.
 
@@ -179,12 +179,13 @@ def search_properties(location: str, property_type: str, budget: str) -> dict:
         location: City name (Lahore, Islamabad, Karachi, Peshawar)
         property_type: Type of property - house, apartment, plot, commercial
         budget: Budget as string e.g. '200 lakhs', '1.5 crore', '300'
+        bedrooms: Optional minimum number of bedrooms. Omit if not specified by the user.
 
     Returns:
         dict with status, count, and list of matching properties
     """
     try:
-        results = search_properties_db(location, property_type, budget)
+        results = search_properties_db(location, property_type, budget, bedrooms)
 
         if not results:
             return {

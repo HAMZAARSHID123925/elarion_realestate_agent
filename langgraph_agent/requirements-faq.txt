@@ -1,0 +1,10 @@
+# New dependencies for the FAQ / Workflow #3 subgraph.
+# Everything else (langgraph, langchain-groq, mcp, python-dotenv, etc.) is
+# already required by the maintenance workflow and orchestrator.
+
+langchain-google-genai   # Gemini embeddings
+pinecone                 # Pinecone vector DB client
+pypdf                    # PDF text extraction, for when the client provides real policy PDFs
+
+# Install with:
+#   pip install -r requirements-faq.txt --break-system-packages
