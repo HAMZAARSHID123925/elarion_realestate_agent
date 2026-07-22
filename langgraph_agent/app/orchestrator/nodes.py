@@ -16,8 +16,11 @@ def get_llm():
 # --- Pydantic Schema for Unified Structured Output ---
 
 class ClassificationResult(BaseModel):
-    intent: Literal["maintenance", "leasing", "billing", "property_search", "general"] = Field(
-        description="The primary intent of the user's message."
+    intent: Literal["maintenance", "leasing", "billing", "faq", "general"] = Field(
+        description="The primary intent of the user's message. Use 'faq' for informational "
+                    "questions about policies, processes, or the property (e.g. 'what's the "
+                    "rent payment process', 'what are the pool hours') that are not themselves "
+                    "a maintenance issue, a lease/billing transaction, or a general inquiry."
     )
     urgency: Literal["high", "medium", "low"] = Field(
         description="The urgency of the request. 'high' should only be used for active danger or ongoing damage (e.g., active leak, fire)."
@@ -72,7 +75,9 @@ async def classify_and_extract_node(state: OrchestratorState) -> Dict[str, Any]:
 Message: "{request.raw_text}"
 
 Return:
-- intent: one of maintenance, leasing, property_search, billing, general
+- intent: one of maintenance, leasing, billing, faq, general
+  (use 'faq' for informational questions about policies, processes, or the property
+  that are not themselves a maintenance issue, a lease/billing transaction, or a general inquiry)
 - urgency: high, medium, or low (high = active danger/damage happening now)
 - entities: relevant details as key-value pairs (issue type, location, budget, timeframe, etc.)
 """
@@ -92,11 +97,15 @@ Return:
         }
     except Exception as e:
         logger.error(f"Classification LLM failed: {e}")
-        # FAIL-SAFE: If LLM fails, assume it's a high-priority unknown issue
+        # FAIL-SAFE: don't conflate "we couldn't classify this" with "this is a real
+        # emergency" -- those need different handling downstream. rules_engine_node
+        # checks `error` explicitly and routes this to a distinct review action
+        # instead of auto-escalating it as if urgency were genuinely high.
         return {
             "intent": "general",
-            "urgency": "high",
-            "entities": {}
+            "urgency": "medium",
+            "entities": {},
+            "error": "classification_failed"
         }
 
 async def rules_engine_node(state: OrchestratorState) -> Dict[str, Any]:
@@ -104,22 +113,34 @@ async def rules_engine_node(state: OrchestratorState) -> Dict[str, Any]:
     Applies business rules to determine the final action based on state.
     """
     intent = state.get("intent", "general")
-    urgency = state.get("urgency", "high")
+    urgency = state.get("urgency", "medium")
     role = state.get("user_profile", {}).get("role", "guest")
+    classification_failed = state.get("error") == "classification_failed"
     
     action_taken = "need_more_info"
     response_msg = "Your request has been received."
     
-    # Business Rules
-    if urgency == "high":
+    # Business Rules -- order matters: a genuine failure to classify is handled
+    # separately from a genuine high-urgency classification, so LLM hiccups don't
+    # get treated as real emergencies.
+    if classification_failed:
+        action_taken = "needs_human_review"
+        response_msg = "I had a little trouble understanding that. Let me connect you with a team member."
+    elif urgency == "high":
         action_taken = "human_escalation"
         response_msg = "This is an emergency. Escalating to a human manager immediately."
     elif intent == "maintenance":
         action_taken = "routed_to_maintenance_workflow"
         response_msg = "I have logged your maintenance request. The maintenance team will be notified."
-    elif intent == "property_search":
-        action_taken = "routed_to_property_search_workflow"
-        response_msg = "Let me look up properties for you."
+    elif intent == "faq":
+        action_taken = "routed_to_faq_workflow"
+        response_msg = "Let me find that information for you."
+    elif intent == "billing":
+        # No dedicated billing workflow exists yet -- billing/rent-process questions
+        # are informational, so they're answered from the FAQ knowledge base for now.
+        # Replace this branch with routed_to_billing_workflow once that department exists.
+        action_taken = "routed_to_faq_workflow"
+        response_msg = "Let me pull up that billing information for you."
     elif intent == "leasing":
         action_taken = "routed_to_leasing_workflow"
         response_msg = "I will connect you with our leasing department."

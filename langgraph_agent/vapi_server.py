@@ -13,8 +13,8 @@ load_dotenv()
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.graph import graph
-from app.state import ConversationState
+from app.pipeline import handle_request
+from app.checkpointer import close_checkpointer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -35,64 +35,50 @@ def _parse_vapi_messages(messages: List[Dict[str, Any]]) -> List[BaseMessage]:
             lc_messages.append(SystemMessage(content=content))
     return lc_messages
 
-def _rebuild_state_from_messages(lc_messages: List[BaseMessage]) -> ConversationState:
-    """
-    Since VAPI doesn't store our complex custom state, we use the message history 
-    and let the LangGraph re-infer the missing pieces if needed, or we just pass the history.
-    """
-    # Create an initial empty state with a dummy conversation_id
-    state = ConversationState(
-        conversation_id="vapi_call_123",
-        messages=lc_messages[:-1] # All except the last one (which we will process)
-    )
-    return state
-
 @app.post("/vapi/chat/completions")
 async def vapi_chat_completions(request: Request):
     """
     OpenAI-compatible endpoint for VAPI Custom LLM.
+
+    Now routes through the master pipeline (app/pipeline.py) instead of talking
+    to Workflow 1 (property search) directly -- this is what actually connects
+    VAPI to the Layer 2 orchestrator and, through it, to maintenance/FAQ/property
+    search rather than being locked into property search alone.
     """
     body = await request.json()
     messages = body.get("messages", [])
     stream = body.get("stream", False)
-    
-    logger.info(f"Received VAPI request: stream={stream}, num_messages={len(messages)}")
 
-    # Convert messages
+    # VAPI includes a stable call id on every request for a given phone call --
+    # this becomes the pipeline's thread_id, so the checkpointer treats every
+    # turn of the same call as one continuous conversation. Falls back to a
+    # fixed id only for manual/local testing without a real VAPI call object.
+    call_id = body.get("call", {}).get("id") or "vapi-dev-session"
+
+    logger.info(f"Received VAPI request: stream={stream}, num_messages={len(messages)}, call_id={call_id}")
+
+    # Convert messages, pull out just this turn's user text -- the pipeline's
+    # checkpointer (keyed by call_id) supplies prior-turn memory, so we don't
+    # need to resend/re-parse the full transcript on every request the way
+    # Workflow 1 alone used to require.
     lc_messages = _parse_vapi_messages(messages)
-    
-    # We need to process the latest user message
-    if not lc_messages or not isinstance(lc_messages[-1], HumanMessage):
-        # Fallback empty state
-        input_state = ConversationState(conversation_id="vapi", messages=[])
-    else:
-        latest_message = lc_messages[-1]
-        input_state = ConversationState(
-            conversation_id="vapi",
-            messages=lc_messages
-        )
+    user_text = ""
+    if lc_messages and isinstance(lc_messages[-1], HumanMessage):
+        user_text = lc_messages[-1].content
 
-    # In a production app, you might want to run `graph.astream_events` to stream tokens as they are generated.
-    # Because Groq is extremely fast, we can `invoke` and then stream the result text if `stream=True`.
-    
     try:
-        # Invoke the LangGraph brain
-        result_state = graph.invoke(input_state)
-        
-        # Extract the spoken response
-        voice_response = result_state.get("voice_response")
-        
-        if not voice_response and result_state.get("messages"):
-            last_message = result_state["messages"][-1]
-            if last_message.type == "ai":
-                voice_response = last_message.content
-                
-        if not voice_response:
-            voice_response = "I'm not sure how to respond to that."
-            
+        voice_response = await handle_request(
+            channel="vapi",
+            user_id=call_id,
+            raw_text=user_text,
+            channel_metadata={"session_id": call_id},
+        )
     except Exception as e:
         logger.error(f"Error processing VAPI request: {e}")
         voice_response = "I'm sorry, I encountered an error."
+
+    if not voice_response:
+        voice_response = "I'm not sure how to respond to that."
 
     if stream:
         async def generate_sse():
@@ -134,6 +120,10 @@ async def vapi_chat_completions(request: Request):
                 "finish_reason": "stop"
             }]
         }
+
+@app.on_event("shutdown")
+async def _on_shutdown():
+    await close_checkpointer()
 
 if __name__ == "__main__":
     import uvicorn

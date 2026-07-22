@@ -80,7 +80,7 @@ async def rag_retrieve_node(state: FAQState) -> dict:
         GroundednessCheck,
     )
 
-    if not groundedness.is_supported or groundedness.confidence == "low":
+    if groundedness.is_supported == "no" or groundedness.confidence == "low":
         return {
             "rag_context": chunks,
             "confidence_score": top_score,

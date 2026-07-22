@@ -60,7 +60,13 @@ def slots_router(state: FAQState) -> str:
     return "call_property_mcp"
 
 
-def build_faq_graph():
+def build_faq_graph(checkpointer=None):
+    """
+    checkpointer is injectable for the same reason as build_maintenance_graph:
+    defaults to a fresh MemorySaver for solo/dev testing (existing test_faq_stage1.py
+    keeps working unchanged), while app/pipeline.py passes in the shared, persistent
+    checkpointer for production so multi-turn slot accumulation survives a restart.
+    """
     workflow = StateGraph(FAQState)
 
     workflow.add_node("classify_intent", classify_intent_node)
@@ -116,8 +122,7 @@ def build_faq_graph():
     workflow.add_edge("clarify", "compose_response")
     workflow.add_edge("compose_response", END)
 
-    memory = MemorySaver()
-    return workflow.compile(checkpointer=memory)
+    return workflow.compile(checkpointer=checkpointer or MemorySaver())
 
 
 faq_graph = build_faq_graph()

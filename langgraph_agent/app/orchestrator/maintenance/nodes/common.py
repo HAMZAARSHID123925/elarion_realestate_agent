@@ -55,6 +55,6 @@ class MaintenanceExtraction(BaseModel):
         ),
     )
     issue_description: str | None = Field(default=None, description="Detailed description of the problem. Null if not mentioned.")
-    urgency: Literal["low", "medium", "high"] | None = Field(default=None, description="The urgency of the request. Null if not mentioned.")
+    urgency: Literal["low", "medium", "high"] | None = Field(default=None, description="The urgency level. MUST be exactly one of 'low', 'medium', or 'high'. DO NOT use 'EMERGENCY'. Default to 'low' for cosmetic issues like painting or minor touch-ups. Map any fire, flood, active danger, or life-threatening situation to 'high'. Null only if urgency has not been mentioned.")
     permission_to_enter: Literal["yes", "no", "unconfirmed"] | None = Field(default=None, description="Whether the tenant grants permission to enter. If asked but not clearly answered, use 'unconfirmed'. Null if not mentioned.")
     pets_present: Literal["yes", "no", "unconfirmed"] | None = Field(default=None, description="Whether there are pets. If asked but not clearly answered, use 'unconfirmed'. Null if not mentioned.")

@@ -92,6 +92,68 @@ async def lookup_tenant(phone_or_email: str) -> str:
     return json.dumps({"error": "Tenant not found"})
 
 
+# ── Tool: lookup_tenant_by_name ───────────────────────────────────────
+@mcp.tool()
+async def lookup_tenant_by_name(name: str) -> str:
+    """
+    Look up a tenant by exact name (case-insensitive).
+    Returns tenant_id, name, unit_id, and property_id (resolved via unit join).
+    """
+    db_pool = await get_pool()
+    async with db_pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT t.tenant_id, t.name, t.unit_id, u.property_id
+                FROM   tenants t
+                JOIN   units   u ON u.unit_id = t.unit_id
+                WHERE  t.name ILIKE %s
+                """,
+                (name,),
+            )
+            row = await cur.fetchone()
+
+    if row:
+        return json.dumps({
+            "tenant_id":   row[0],
+            "name":        row[1],
+            "unit_id":     row[2],
+            "property_id": row[3],
+        })
+    return json.dumps({"error": "Tenant not found"})
+
+
+# ── Tool: lookup_tenant_by_unit ───────────────────────────────────────
+@mcp.tool()
+async def lookup_tenant_by_unit(unit_id: str) -> str:
+    """
+    Look up a tenant by their unit_id.
+    Returns tenant_id, name, unit_id, and property_id.
+    """
+    db_pool = await get_pool()
+    async with db_pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT t.tenant_id, t.name, t.unit_id, u.property_id
+                FROM   tenants t
+                JOIN   units   u ON u.unit_id = t.unit_id
+                WHERE  t.unit_id = %s
+                """,
+                (unit_id,),
+            )
+            row = await cur.fetchone()
+
+    if row:
+        return json.dumps({
+            "tenant_id":   row[0],
+            "name":        row[1],
+            "unit_id":     row[2],
+            "property_id": row[3],
+        })
+    return json.dumps({"error": "Tenant not found"})
+
+
 # ── Tool: lookup_property ─────────────────────────────────────────────
 @mcp.tool()
 async def lookup_property(unit_id: str) -> str:

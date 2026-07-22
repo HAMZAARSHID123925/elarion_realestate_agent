@@ -26,7 +26,7 @@ class GroundednessCheck(BaseModel):
     Used inside rag_retrieve_node as the LLM self-check half of the confidence gate
     (design doc section 4, 'Confidence Checking': similarity threshold + LLM self-check).
     """
-    is_supported: bool = Field(description="True only if the retrieved chunks fully support answering the query.")
+    is_supported: Literal["yes", "no"] = Field(description="'yes' if the retrieved chunks fully support answering the query, 'no' otherwise.")
     confidence: Literal["high", "medium", "low"] = Field(description="Overall confidence the retrieved context grounds a correct answer.")
     reason: str = Field(description="One short sentence explaining the confidence level.")
 

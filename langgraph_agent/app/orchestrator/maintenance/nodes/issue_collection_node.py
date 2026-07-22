@@ -41,9 +41,14 @@ async def issue_collection_node(state: MaintenanceState) -> Dict[str, Any]:
         "pets_present": state.get("pets_present")
     }
 
+    missing_slots = state.get("missing_slots", [])
+    active_question = missing_slots[0] if missing_slots else "None (just collecting general info)"
+
     prompt = f"""You are an AI extracting maintenance request details.
 Current Slots already collected:
 {current_slots}
+
+Currently asking the user for: '{active_question}'
 
 Latest user message:
 "{latest_msg}"
@@ -52,6 +57,7 @@ Full Conversation History:
 {history_str}
 
 Your task: Extract ANY NEW information provided in the latest message.
+- If the user provides a short answer like "Yes" or "No", use the 'Currently asking the user for' field to know which slot they are answering.
 - If a slot is already filled and the user hasn't corrected it, you can leave it null (or return the existing value).
 - If the user explicitly corrects a slot, output the new value.
 - If `permission_to_enter` or `pets_present` was asked but the user's response is vague or evasive, store as "unconfirmed". DO NOT guess.
