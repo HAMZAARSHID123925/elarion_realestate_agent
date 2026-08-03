@@ -13,7 +13,7 @@ workflow (design doc section 2.1):
           recommend_generate -> compose_response.
 
 Before running Test 1, ingest the sample .txt knowledge base:
-    python -m app.orchestrator.faq.ingestion.ingest --file app/orchestrator/faq/knowledge_base/sample_pet_policy.txt
+    python -m app.core_workflows.faq.ingestion.ingest --file app/orchestrator/faq/knowledge_base/sample_pet_policy.txt
 
 Requires PINECONE_API_KEY and GOOGLE_API_KEY in langgraph_agent/.env for
 Test 1. Test 2 only needs GROQ_API_KEY (already set) and the existing
@@ -28,11 +28,11 @@ import logging
 load_dotenv()
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from app.orchestrator.faq.graph import faq_graph
-from app.orchestrator.faq.mcp_client import property_mcp_client
+from app.core_workflows.faq.graph import faq_graph
+from app.core_workflows.faq.mcp_client import property_mcp_client
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
-logging.getLogger("app.orchestrator.faq.nodes").setLevel(logging.INFO)
+logging.getLogger("app.core_workflows.faq.nodes").setLevel(logging.INFO)
 
 
 async def run_conversation(test_name: str, thread_id: str, user_id: str, messages: list[str]):

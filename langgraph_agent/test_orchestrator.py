@@ -3,15 +3,73 @@ import sys
 import os
 from dotenv import load_dotenv
 import logging
+from unittest import mock
 
 load_dotenv()
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from app.orchestrator.schemas import UnifiedRequest
 from app.orchestrator.graph import orchestrator_graph
+from app.orchestrator.nodes import identification_node
+from app.core_workflows.maintenance.mcp_client import mcp_client
 
 # Setup simple logging to see what happens
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+
+async def test_identification_node():
+    """
+    Isolated unit test for identification_node (item 5.9 fix), run WITHOUT a live
+    DB/MCP connection -- mcp_client.call_tool is mocked with unittest.mock so this
+    is a real, individually-runnable test of the identification logic itself, not
+    an end-to-end integration test. Uses plain `assert` (pass/fail), unlike the
+    rest of this file which only prints output for a human to eyeball.
+
+    Covers the exact question this fix needs to answer correctly:
+      1. A phone/email that IS a real row in tenants -> status 'known', role 'tenant',
+         real tenant_id/property_id from the DB row (not a hardcoded value).
+      2. A phone/email that is NOT in tenants -> status 'unknown', role 'guest'.
+         Guest is a LABEL only -- see rules_engine_node, which computes `role` but
+         never branches on it, so this does not deny or degrade service; it only
+         records whether the caller matched a real tenant record.
+      3. The MCP client not being connected / raising -> also falls back to guest
+         instead of raising, so a DB hiccup can never crash the pipeline.
+    """
+    print("\n--- Testing identification_node (isolated, mocked mcp_client) ---\n")
+
+    # Case 1: real tenant match
+    fake_found_json = '{"tenant_id": "TEN-001", "name": "Hamza", "unit_id": "U-12", "property_id": "PROP-01"}'
+    with mock.patch.object(mcp_client, "call_tool", new=mock.AsyncMock(return_value=fake_found_json)):
+        state = {"request": UnifiedRequest(channel="whatsapp", user_id="+923330533729", raw_text="hi")}
+        result = await identification_node(state)
+        profile = result["user_profile"]
+        assert profile["status"] == "known", f"expected known, got {profile['status']}"
+        assert profile["role"] == "tenant", f"expected tenant, got {profile['role']}"
+        assert profile["user_id"] == "TEN-001", f"expected real tenant_id TEN-001, got {profile['user_id']}"
+        assert profile["property_id"] == "PROP-01"
+        print(f"[PASS] Known tenant resolved correctly: {profile}")
+
+    # Case 2: no matching row -> guest (not a rejection, just an accurate label)
+    fake_not_found_json = '{"error": "Tenant not found"}'
+    with mock.patch.object(mcp_client, "call_tool", new=mock.AsyncMock(return_value=fake_not_found_json)):
+        state = {"request": UnifiedRequest(channel="whatsapp", user_id="+92-random-caller", raw_text="hi")}
+        result = await identification_node(state)
+        profile = result["user_profile"]
+        assert profile["status"] == "unknown"
+        assert profile["role"] == "guest"
+        assert profile["user_id"] == "+92-random-caller"  # unresolved caller ID is preserved, not dropped
+        print(f"[PASS] Unmatched caller correctly labeled guest (not blocked): {profile}")
+
+    # Case 3: MCP client errors out (e.g. not connected yet) -> fail closed, no crash
+    with mock.patch.object(mcp_client, "call_tool", new=mock.AsyncMock(side_effect=RuntimeError("MCP Client not connected"))):
+        state = {"request": UnifiedRequest(channel="whatsapp", user_id="+923001112222", raw_text="hi")}
+        result = await identification_node(state)  # must NOT raise
+        profile = result["user_profile"]
+        assert profile["status"] == "unknown"
+        assert profile["role"] == "guest"
+        print(f"[PASS] MCP/DB error failed closed to guest instead of crashing: {profile}")
+
+    print("\n--- identification_node: all 3 cases passed ---\n")
 
 async def test_orchestrator():
     print("\n--- Starting Layer 2 Orchestrator Production Tests ---\n")
@@ -107,4 +165,9 @@ if __name__ == "__main__":
     # Workaround for Windows asyncio bug if needed, though asyncio.run is usually fine for this
     if sys.platform == 'win32':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    asyncio.run(test_orchestrator())
+
+    async def _run_all():
+        await test_identification_node()   # isolated, no live DB/LLM needed
+        await test_orchestrator()          # full graph, needs live DB + Groq key
+
+    asyncio.run(_run_all())

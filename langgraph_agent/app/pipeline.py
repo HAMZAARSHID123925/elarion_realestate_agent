@@ -37,6 +37,7 @@ from app.department_nodes import (
     department_router,
     run_maintenance,
     run_faq,
+    run_rent_renewal,
     fallback_node,
 )
 
@@ -53,12 +54,30 @@ def compose_response(state: PipelineState) -> Dict[str, Any]:
 
 
 def entry_router(state: PipelineState) -> str:
-    """Bypasses Layer 2 Orchestrator if the user is already engaged in a Layer 3 workflow."""
+    """
+    Routes active department workflows (e.g. maintenance slot-filling) directly back to 
+    the active department so short follow-up answers (names, units, yes/no) aren't misclassified 
+    by Layer 2, while allowing clear emergencies or FAQ switches to route back to the Orchestrator.
+    """
     active = state.get("active_department")
-    if active in ["maintenance", "faq"]:
-        logger.info(f"entry_router: Bypassing orchestrator, resuming active department: {active}")
-        return active
+    if active in ["maintenance", "rent_renewal"]:
+        request = state.get("request")
+        raw_text = (request.raw_text if request else "").lower().strip()
+        
+        # Check if the user is raising an emergency or asking an explicit FAQ question
+        faq_keywords = ["policy", "pet", "hours", "rent payment", "deposit", "rules", "billing", "how do i pay"]
+        emergency_keywords = ["gas smell", "gas leak", "active flooding", "fire", "burst", "smoke", "carbon monoxide", "no heat"]
+        
+        is_faq_switch = any(kw in raw_text for kw in faq_keywords)
+        is_emergency_switch = any(kw in raw_text for kw in emergency_keywords)
+        
+        if not is_faq_switch and not is_emergency_switch:
+            logger.info(f"entry_router: Resuming active workflow for department: {active}")
+            return active
+            
     return "orchestrator"
+
+
 
 def build_pipeline_graph() -> StateGraph:
     workflow = StateGraph(PipelineState)
@@ -67,6 +86,7 @@ def build_pipeline_graph() -> StateGraph:
     workflow.add_node("department_router", department_router)
     workflow.add_node("maintenance", run_maintenance)
     workflow.add_node("faq", run_faq)
+    workflow.add_node("rent_renewal", run_rent_renewal)
     workflow.add_node("fallback", fallback_node)
     workflow.add_node("compose_response", compose_response)
 
@@ -76,7 +96,8 @@ def build_pipeline_graph() -> StateGraph:
         {
             "orchestrator": "orchestrator",
             "maintenance": "maintenance",
-            "faq": "faq"
+            "faq": "faq",
+            "rent_renewal": "rent_renewal"
         }
     )
     workflow.add_edge("orchestrator", "department_router")
@@ -85,6 +106,7 @@ def build_pipeline_graph() -> StateGraph:
     # department_nodes.py, so no add_conditional_edges mapping is needed here.
     workflow.add_edge("maintenance", "compose_response")
     workflow.add_edge("faq", "compose_response")
+    workflow.add_edge("rent_renewal", "compose_response")
     workflow.add_edge("fallback", "compose_response")
     workflow.add_edge("compose_response", END)
 

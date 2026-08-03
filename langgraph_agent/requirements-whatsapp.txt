@@ -1,6 +1,0 @@
-# DELETE THIS FILE.
-#
-# It previously listed "twilio" as a dependency for the Twilio-based
-# whatsapp_server.py. That version was replaced with a Meta WhatsApp Cloud
-# API version, which only needs `requests` -- already installed in your
-# venv as a transitive dependency, so there is nothing new to install here.
