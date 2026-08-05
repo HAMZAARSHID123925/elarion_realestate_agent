@@ -51,9 +51,24 @@ async def init_db():
                     tenant_id VARCHAR(50) PRIMARY KEY,
                     phone_or_email VARCHAR(100) UNIQUE NOT NULL,
                     name TEXT NOT NULL,
-                    unit_id VARCHAR(50) REFERENCES units(unit_id)
+                    unit_id VARCHAR(50) REFERENCES units(unit_id),
+                    property_address TEXT,
+                    rent_due_date DATE,
+                    last_payment_date DATE,
+                    rent_amount NUMERIC(12, 2) DEFAULT 0.00,
+                    payment_status VARCHAR(50) DEFAULT 'overdue',
+                    reminder_30_sent_at TIMESTAMP,
+                    reminder_5_sent_at TIMESTAMP,
+                    response_received BOOLEAN DEFAULT FALSE,
+                    human_escalated BOOLEAN DEFAULT FALSE,
+                    escalation_reason TEXT,
+                    manual_hold BOOLEAN DEFAULT FALSE,
+                    last_reminder_status VARCHAR(50) DEFAULT 'none',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
+
 
             print("Creating vendors table...")
             await cur.execute("""

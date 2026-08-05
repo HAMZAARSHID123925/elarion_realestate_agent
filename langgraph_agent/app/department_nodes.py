@@ -30,6 +30,7 @@ from app.checkpointer import get_checkpointer
 from app.core_workflows.maintenance.graph import build_maintenance_graph
 from app.core_workflows.faq.graph import build_faq_graph
 from app.core_workflows.rent_renewal.graph import build_rent_renewal_graph
+from app.core_workflows.rent_reminder.graph import build_rent_reminder_graph
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,8 @@ logger = logging.getLogger(__name__)
 _maintenance_graph = None
 _faq_graph = None
 _rent_renewal_graph = None
+_rent_reminder_graph = None
+
 
 
 async def _get_maintenance_graph():
@@ -69,9 +72,18 @@ async def _get_rent_renewal_graph():
         _rent_renewal_graph = build_rent_renewal_graph(checkpointer=checkpointer)
     return _rent_renewal_graph
 
+
+async def _get_rent_reminder_graph():
+    global _rent_reminder_graph
+    if _rent_reminder_graph is None:
+        checkpointer = await get_checkpointer()
+        _rent_reminder_graph = build_rent_reminder_graph(checkpointer=checkpointer)
+    return _rent_reminder_graph
+
+
 # --- Router ---
 
-def department_router(state: PipelineState) -> Command[Literal["maintenance", "faq", "rent_renewal", "fallback"]]:
+def department_router(state: PipelineState) -> Command[Literal["maintenance", "faq", "rent_renewal", "rent_reminder", "fallback"]]:
     """Reads Layer 2's decision and dispatches to the matching Layer 3 department."""
     response = state.get("response")
     action = response.action_taken if response else None
@@ -85,6 +97,8 @@ def department_router(state: PipelineState) -> Command[Literal["maintenance", "f
         destination = "faq"
     elif action == "routed_to_rent_renewal_workflow" or intent in ("rent_renewal", "lease_renewal"):
         destination = "rent_renewal"
+    elif action == "routed_to_rent_reminder_workflow" or intent in ("rent_reminder", "rent_overdue"):
+        destination = "rent_reminder"
     else:
         destination = "fallback"
 
@@ -177,6 +191,24 @@ async def run_rent_renewal(state: PipelineState, config: RunnableConfig) -> Dict
         "department_result": result,
         "final_response": "Thank you for inquiring about your rent renewal. Our team will present your options shortly.",
     }
+
+
+async def run_rent_reminder(state: PipelineState, config: RunnableConfig) -> Dict[str, Any]:
+    request = state["request"]
+    sub_graph = await _get_rent_reminder_graph()
+
+    sub_input = {
+        "tenant_id": request.user_id,
+        "current_date": date.today().isoformat(),
+    }
+    result = await sub_graph.ainvoke(sub_input, config)
+
+    return {
+        "active_department": None,
+        "department_result": result,
+        "final_response": "Your rent reminder inquiry has been processed.",
+    }
+
 
 
 def fallback_node(state: PipelineState) -> Dict[str, Any]:
