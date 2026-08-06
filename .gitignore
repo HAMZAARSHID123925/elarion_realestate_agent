@@ -3,5 +3,16 @@
 __pycache__/
 *.pyc
 
+# Python virtual environment folder -- name confirmed to match the actual
+# folder on disk (realestate-agent/, with a dash). Removed the duplicate
+# line that was here before (harmless, but redundant).
 realestate-agent/
-realestate-agent/
+
+# Scratch DB / cache files that shouldn't be committed
+elarion.db
+*.pytest_cache/
+**/checkpoints.db
+
+# Temporary holding folder for files flagged as dead code during the
+# production readiness review -- delete this folder once confirmed unneeded.
+_DELETE_ME_leftover_files/

@@ -354,7 +354,7 @@ async def assign_vendor(
     Run the vendor assignment routing engine for a ticket, following strategy order:
 
     1. Preferred/Contracted  — vendor with is_contracted=TRUE for this property_id + category
-    2. Emergency priority    — if urgency=EMERGENCY, restrict candidate pool to accepts_emergency=TRUE
+    2. Emergency priority    — if urgency="emergency" (case-insensitive), restrict candidate pool to accepts_emergency=TRUE
     3. Skill filter          — category match is mandatory at every step
     4. Location-based        — rank remaining candidates by service_area match to property_id
     5. Availability filter   — deprioritize/exclude vendors where active_jobs >= capacity
@@ -385,9 +385,18 @@ async def assign_vendor(
                 )
                 contracted = await cur.fetchone()
 
+                # Normalize once: callers may pass "emergency", "Emergency", etc.
+                # This used to compare against the exact string "EMERGENCY", which
+                # the priority_detection_node keyword net never actually sent
+                # (it used lowercase "emergency") -- so genuinely urgent tickets
+                # were silently skipping emergency-vendor treatment. Comparing
+                # case-insensitively here matches the unified low/medium/high/
+                # emergency label set used across the whole project now.
+                is_emergency = (urgency or "").strip().lower() == "emergency"
+
                 if contracted and contracted[7] < contracted[6]:
                     # capacity check (active_jobs < capacity) — otherwise fall through
-                    if not (urgency == "EMERGENCY" and not contracted[5]):
+                    if not (is_emergency and not contracted[5]):
                         await _log_attempt(cur, ticket_id, contracted[0], "CONTRACTED", "MATCHED",
                                             "Contracted vendor available and within capacity")
                         await conn.commit()
@@ -416,7 +425,7 @@ async def assign_vendor(
                       AND  active_jobs < capacity
                 """
                 params = [category, property_id]
-                if urgency == "EMERGENCY":
+                if is_emergency:
                     base_query += " AND accepts_emergency = TRUE"
                 base_query += " ORDER BY active_jobs ASC"
 
@@ -425,7 +434,7 @@ async def assign_vendor(
 
                 if candidates:
                     top = candidates[0]
-                    strategy_label = "EMERGENCY_BROADCAST" if urgency == "EMERGENCY" else "LOCATION_BASED"
+                    strategy_label = "EMERGENCY_BROADCAST" if is_emergency else "LOCATION_BASED"
                     await _log_attempt(cur, ticket_id, top[0], strategy_label, "MATCHED",
                                         f"Skill+location+availability match, {len(candidates)} candidate(s) found")
                     await conn.commit()
@@ -451,7 +460,7 @@ async def assign_vendor(
                       AND  active_jobs < capacity
                 """
                 fallback_params = [category]
-                if urgency == "EMERGENCY":
+                if is_emergency:
                     fallback_query += " AND accepts_emergency = TRUE"
                 fallback_query += " ORDER BY active_jobs ASC"
 

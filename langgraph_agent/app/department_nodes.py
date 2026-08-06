@@ -27,8 +27,10 @@ from langgraph.types import Command
 from app.pipeline_state import PipelineState
 from app.checkpointer import get_checkpointer
 
-from app.orchestrator.maintenance.graph import build_maintenance_graph
-from app.orchestrator.faq.graph import build_faq_graph
+from app.core_workflows.maintenance.graph import build_maintenance_graph
+from app.core_workflows.faq.graph import build_faq_graph
+from app.core_workflows.rent_renewal.graph import build_rent_renewal_graph
+from app.core_workflows.rent_reminder.graph import build_rent_reminder_graph
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,9 @@ logger = logging.getLogger(__name__)
 
 _maintenance_graph = None
 _faq_graph = None
+_rent_renewal_graph = None
+_rent_reminder_graph = None
+
 
 
 async def _get_maintenance_graph():
@@ -59,24 +64,47 @@ async def _get_faq_graph():
         _faq_graph = build_faq_graph(checkpointer=checkpointer)
     return _faq_graph
 
+
+async def _get_rent_renewal_graph():
+    global _rent_renewal_graph
+    if _rent_renewal_graph is None:
+        checkpointer = await get_checkpointer()
+        _rent_renewal_graph = build_rent_renewal_graph(checkpointer=checkpointer)
+    return _rent_renewal_graph
+
+
+async def _get_rent_reminder_graph():
+    global _rent_reminder_graph
+    if _rent_reminder_graph is None:
+        checkpointer = await get_checkpointer()
+        _rent_reminder_graph = build_rent_reminder_graph(checkpointer=checkpointer)
+    return _rent_reminder_graph
+
+
 # --- Router ---
 
-def department_router(state: PipelineState) -> Command[Literal["maintenance", "faq", "fallback"]]:
+def department_router(state: PipelineState) -> Command[Literal["maintenance", "faq", "rent_renewal", "rent_reminder", "fallback"]]:
     """Reads Layer 2's decision and dispatches to the matching Layer 3 department."""
     response = state.get("response")
     action = response.action_taken if response else None
     intent = state.get("intent")
 
-    if action == "routed_to_maintenance_workflow" or intent == "maintenance":
+    if action in ("human_escalation", "needs_human_review"):
+        destination = "fallback"
+    elif action == "routed_to_maintenance_workflow" or intent == "maintenance":
         destination = "maintenance"
     elif action == "routed_to_faq_workflow" or intent in ("faq", "billing"):
         destination = "faq"
+    elif action == "routed_to_rent_renewal_workflow" or intent in ("rent_renewal", "lease_renewal"):
+        destination = "rent_renewal"
+    elif action == "routed_to_rent_reminder_workflow" or intent in ("rent_reminder", "rent_overdue"):
+        destination = "rent_reminder"
     else:
         destination = "fallback"
 
     logger.info(f"department_router: action={action} intent={intent} -> {destination}")
-    # Set active_department so follow-up turns bypass the orchestrator
     return Command(goto=destination, update={"active_department": destination if destination != "fallback" else None})
+
 
 
 # --- Department wrapper nodes ---
@@ -92,9 +120,7 @@ async def run_maintenance(state: PipelineState, config: RunnableConfig) -> Dict[
     }
 
     # On follow-up turns (active_department == "maintenance"), carry over every
-    # slot that was already extracted in a previous turn. Without this, ainvoke
-    # starts fresh each time and overwrites the checkpoint state with None values,
-    # causing the slot-collection loop to forget what the user already said.
+    # slot that was already extracted in a previous turn.
     prev = state.get("department_result") or {}
     for slot in [
         "tenant_identity", "property_unit", "issue_category",
@@ -105,24 +131,22 @@ async def run_maintenance(state: PipelineState, config: RunnableConfig) -> Dict[
         if prev.get(slot) is not None:
             sub_input[slot] = prev[slot]
 
-    # Passing `config` through (same thread_id as the parent) is what makes
-    # human_approval_node's interrupt() resumable across turns/restarts.
     result = await sub_graph.ainvoke(sub_input, config)
 
-    # Workflow is done when:
-    # 1. Normal path: ticket created + vendor assigned + response generated
-    # 2. Emergency path: escalation_record is set (graph ends at END immediately)
-    is_complete = bool(result.get("escalation_record")) or bool(
-        result.get("created_ticket_id") and result.get("assignment_status")
+    is_complete = (
+        bool(result.get("escalation_record"))
+        or bool(result.get("created_ticket_id") and result.get("assignment_status"))
+        or result.get("ticket_creation_status") == "error"
     )
     active_dept = None if is_complete else "maintenance"
 
     return {
         "active_department": active_dept,
-        "department_result": result,
+        "department_result": None if is_complete else result,
         "final_response": result.get("final_response")
         or "Your maintenance request has been logged and is being reviewed.",
     }
+
 
 
 async def run_faq(state: PipelineState, config: RunnableConfig) -> Dict[str, Any]:
@@ -148,6 +172,43 @@ async def run_faq(state: PipelineState, config: RunnableConfig) -> Dict[str, Any
         "department_result": result,
         "final_response": final_response,
     }
+
+
+async def run_rent_renewal(state: PipelineState, config: RunnableConfig) -> Dict[str, Any]:
+    request = state["request"]
+    sub_graph = await _get_rent_renewal_graph()
+
+    sub_input = {
+        "messages": [HumanMessage(content=request.raw_text)],
+        "user_id": request.user_id,
+    }
+    result = await sub_graph.ainvoke(sub_input, config)
+
+    is_complete = result.get("is_complete", True)
+    active_dept = None if is_complete else "rent_renewal"
+    return {
+        "active_department": active_dept,
+        "department_result": result,
+        "final_response": "Thank you for inquiring about your rent renewal. Our team will present your options shortly.",
+    }
+
+
+async def run_rent_reminder(state: PipelineState, config: RunnableConfig) -> Dict[str, Any]:
+    request = state["request"]
+    sub_graph = await _get_rent_reminder_graph()
+
+    sub_input = {
+        "tenant_id": request.user_id,
+        "current_date": date.today().isoformat(),
+    }
+    result = await sub_graph.ainvoke(sub_input, config)
+
+    return {
+        "active_department": None,
+        "department_result": result,
+        "final_response": "Your rent reminder inquiry has been processed.",
+    }
+
 
 
 def fallback_node(state: PipelineState) -> Dict[str, Any]:
