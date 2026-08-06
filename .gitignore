@@ -2,6 +2,11 @@
 **/.env
 __pycache__/
 *.pyc
+*.py[cod]
 
+# Virtual Environments
+realestate_agent/
 realestate-agent/
-realestate-agent/
+venv/
+.venv/
+env/
