@@ -1,53 +1,65 @@
 """
-One shared, persistent checkpointer for the whole master pipeline.
+One shared, persistent checkpointer for the whole master pipeline backed by PostgreSQL.
 
 Why this exists: maintenance/graph.py's human_approval_node pauses execution
 with LangGraph's interrupt() and waits for a human decision. That pause/resume
-is only durable if the checkpointer backing it is durable too. The old
-per-subgraph MemorySaver() lived only in process RAM -- a server restart while
-a ticket was mid-approval silently lost it, with no error and no trace.
+is durable because the checkpointer backing it persists state directly to
+Neon PostgreSQL.
 
-AsyncSqliteSaver is used here (not AsyncPostgresSaver) because it needs zero
-new infrastructure -- you already have SQLite (elarion.db) in this stack, and
-CHECKPOINT_DB_PATH just points at another local SQLite file dedicated to
-checkpoints. Swap to AsyncPostgresSaver + DATABASE_URL later when Elarion
-moves to a shared Postgres deployment -- nothing else in app/pipeline.py or
-app/department_nodes.py needs to change, they only depend on get_checkpointer()
-returning *some* BaseCheckpointSaver.
-
-One instance is opened lazily and reused for the lifetime of the process --
-do not call AsyncSqliteSaver.from_conn_string(...) more than once per process,
-each call opens its own SQLite connection.
+AsyncPostgresSaver + DATABASE_URL is used across all input channels and subgraphs.
 """
 import os
+import sys
+import asyncio
 import logging
 
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+if sys.platform == "win32":
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except Exception:
+        pass
+
+from dotenv import load_dotenv
+from psycopg_pool import AsyncConnectionPool
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-CHECKPOINT_DB_PATH = os.getenv("CHECKPOINT_DB_PATH", "checkpoints.db")
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is not set in .env")
 
-_saver_cm = None
+_pool = None
 _saver = None
 
 
 async def get_checkpointer():
-    """Lazily opens one shared AsyncSqliteSaver for the process lifetime."""
-    global _saver_cm, _saver
+    """Lazily opens one shared AsyncPostgresSaver pool for the process lifetime."""
+    global _pool, _saver
     if _saver is None:
-        logger.info(f"Opening persistent checkpointer at {CHECKPOINT_DB_PATH}")
-        _saver_cm = AsyncSqliteSaver.from_conn_string(CHECKPOINT_DB_PATH)
-        _saver = await _saver_cm.__aenter__()
+        logger.info("Connecting persistent AsyncPostgresSaver to PostgreSQL...")
+        _pool = AsyncConnectionPool(
+            conninfo=DATABASE_URL,
+            max_size=10,
+            kwargs={"autocommit": True},
+            open=False
+        )
+        await _pool.open()
+        _saver = AsyncPostgresSaver(_pool)
+        await _saver.setup()
+        logger.info("AsyncPostgresSaver connected & verified.")
     return _saver
 
 
 async def close_checkpointer():
     """Call this on app shutdown (FastAPI lifespan / CLI harness exit) to close
-    the SQLite connection cleanly."""
-    global _saver_cm, _saver
-    if _saver_cm is not None:
-        await _saver_cm.__aexit__(None, None, None)
-        _saver_cm = None
+    the PostgreSQL connection pool cleanly."""
+    global _pool, _saver
+    if _pool is not None:
+        await _pool.close()
+        _pool = None
         _saver = None
-        logger.info("Persistent checkpointer closed")
+        logger.info("Persistent AsyncPostgresSaver connection pool closed")
+
