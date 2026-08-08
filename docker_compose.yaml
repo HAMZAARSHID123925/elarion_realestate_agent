@@ -1,17 +1,66 @@
 version: '3.8'
+
 services:
   db:
     image: postgres:15-alpine
     container_name: realestate_postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: realestate
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-realestate}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+
+  whatsapp-server:
+    image: python:3.11-slim
+    working_dir: /srv/langgraph_agent
+    volumes:
+      - ./langgraph_agent:/srv/langgraph_agent
+      - ./mcp_servers:/srv/mcp_servers
+    env_file:
+      - ./langgraph_agent/.env
+    ports:
+      - "8003:8003"
+    command: >
+      bash -c "pip install --no-cache-dir --break-system-packages
+        fastapi uvicorn requests python-dotenv psycopg[binary] psycopg_pool
+        mcp langgraph langchain-core langchain-groq pydantic
+        -r requirements-faq.txt
+        && python whatsapp_server.py"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8003/health', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  vapi-server:
+    image: python:3.11-slim
+    working_dir: /srv/langgraph_agent
+    volumes:
+      - ./langgraph_agent:/srv/langgraph_agent
+      - ./mcp_servers:/srv/mcp_servers
+    env_file:
+      - ./langgraph_agent/.env
+    ports:
+      - "8002:8002"
+    command: >
+      bash -c "pip install --no-cache-dir --break-system-packages
+        fastapi uvicorn requests python-dotenv psycopg[binary] psycopg_pool
+        mcp langgraph langchain-core langchain-groq pydantic
+        -r requirements-faq.txt
+        && python vapi_server.py"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8002/health', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
 volumes:
   postgres_data:

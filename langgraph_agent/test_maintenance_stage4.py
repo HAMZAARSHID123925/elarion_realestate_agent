@@ -28,8 +28,8 @@ load_dotenv()
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from langchain_core.messages import HumanMessage
-from app.orchestrator.maintenance.graph import maintenance_graph
-from app.orchestrator.maintenance.mcp_client import mcp_client
+from app.core_workflows.maintenance.graph import maintenance_graph
+from app.core_workflows.maintenance.mcp_client import mcp_client
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 

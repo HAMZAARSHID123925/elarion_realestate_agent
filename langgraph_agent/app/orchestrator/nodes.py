@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Dict, Any, Literal
 from pydantic import BaseModel, Field
@@ -6,6 +7,11 @@ from langchain_groq import ChatGroq
 from app.orchestrator.state import OrchestratorState
 from app.orchestrator.schemas import UnifiedResponse
 from app.orchestrator.rate_limiter import groq_queue
+# Same MCP client singleton the maintenance workflow already uses for
+# lookup_tenant / create_ticket / assign_vendor -- it is connected once at
+# process startup by whatsapp_server.py / vapi_server.py, so reusing it here
+# avoids opening a second stdio connection to mcp_server.py.
+from app.core_workflows.maintenance.mcp_client import mcp_client
 
 logger = logging.getLogger(__name__)
 
@@ -33,17 +39,29 @@ class ClassificationResult(BaseModel):
 
 async def identification_node(state: OrchestratorState) -> Dict[str, Any]:
     """
-    Identifies the user from the database. 
-    Fail-closed implementation: defaults to unknown/guest unless a strict match is found.
+    Identifies the user from the real tenant database via the maintenance MCP
+    server's lookup_tenant tool (same DB the maintenance workflow already uses).
+    Fail-closed implementation: defaults to unknown/guest unless a strict match is found,
+    and any DB/connection error also falls back to guest rather than raising --
+    identification must never crash the pipeline.
     """
     user_id = state["request"].user_id
-    
-    # TEMP MOCK: Replace this block with a real TENANCIES query once that table exists
-    # mock_db_lookup would normally return None if not found.
+
     tenant = None
-    if user_id == "tenant@example.com" or user_id == "+923001234567": # Only strict matches pass
-        tenant = {"id": user_id, "role": "tenant", "property_id": "PROP_001"}
-    
+    try:
+        result_json = await mcp_client.call_tool("lookup_tenant", {"phone_or_email": user_id})
+        result = json.loads(result_json) if result_json else {}
+        if "error" not in result:
+            tenant = {
+                "id": result.get("tenant_id"),
+                "role": "tenant",
+                "property_id": result.get("property_id"),
+            }
+    except Exception as e:
+        # Not connected yet, DB hiccup, etc. -- fail closed to guest, never raise here.
+        logger.error(f"identification_node: lookup_tenant failed for {user_id}: {e}")
+        tenant = None
+
     if tenant is None:
         profile = {
             "status": "unknown",
@@ -110,43 +128,38 @@ Return:
 
 async def rules_engine_node(state: OrchestratorState) -> Dict[str, Any]:
     """
-    Applies business rules to determine the final action based on state.
+    Applies business rules to determine the final action based on intent and urgency.
+    Routes maintenance, FAQ, and rent renewal directly to their respective Layer 3 subgraphs.
     """
     intent = state.get("intent", "general")
     urgency = state.get("urgency", "medium")
-    role = state.get("user_profile", {}).get("role", "guest")
     classification_failed = state.get("error") == "classification_failed"
     
     action_taken = "need_more_info"
     response_msg = "Your request has been received."
     
-    # Business Rules -- order matters: a genuine failure to classify is handled
-    # separately from a genuine high-urgency classification, so LLM hiccups don't
-    # get treated as real emergencies.
     if classification_failed:
         action_taken = "needs_human_review"
         response_msg = "I had a little trouble understanding that. Let me connect you with a team member."
     elif urgency == "high":
         action_taken = "human_escalation"
-        response_msg = "This is an emergency. Escalating to a human manager immediately."
+        response_msg = "This sounds like an emergency. I am escalating this to a live human manager immediately. Please stay on the line."
     elif intent == "maintenance":
         action_taken = "routed_to_maintenance_workflow"
         response_msg = "I have logged your maintenance request. The maintenance team will be notified."
-    elif intent == "faq":
+    elif intent == "faq" or intent == "billing":
         action_taken = "routed_to_faq_workflow"
         response_msg = "Let me find that information for you."
-    elif intent == "billing":
-        # No dedicated billing workflow exists yet -- billing/rent-process questions
-        # are informational, so they're answered from the FAQ knowledge base for now.
-        # Replace this branch with routed_to_billing_workflow once that department exists.
-        action_taken = "routed_to_faq_workflow"
-        response_msg = "Let me pull up that billing information for you."
+    elif intent in ("rent_renewal", "lease_renewal"):
+        action_taken = "routed_to_rent_renewal_workflow"
+        response_msg = "I will connect you with our rent renewal department."
     elif intent == "leasing":
         action_taken = "routed_to_leasing_workflow"
         response_msg = "I will connect you with our leasing department."
     else:
         action_taken = "general_inquiry"
-        response_msg = "Thank you for your message. An agent will review it shortly."
+        response_msg = "Hello! Welcome to Elarion Real Estate Support. How can I assist you today with a maintenance request, lease renewal, or property inquiry?"
+
         
     # If the user sent empty text, override
     if not state["request"].raw_text.strip():
@@ -163,3 +176,5 @@ async def rules_engine_node(state: OrchestratorState) -> Dict[str, Any]:
     
     logger.info(f"Rules Engine Decision: {action_taken}")
     return {"response": final_response}
+
+

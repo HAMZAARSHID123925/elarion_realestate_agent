@@ -8,7 +8,7 @@ from langchain_core.messages import HumanMessage
 load_dotenv()
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from app.orchestrator.maintenance.graph import maintenance_graph
+from app.core_workflows.maintenance.graph import maintenance_graph
 
 # Setup simple logging
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
@@ -55,7 +55,7 @@ async def run_conversation(test_name: str, thread_id: str, user_id: str, message
         except Exception as e:
             print(f"[CRITICAL FAILURE] Graph execution crashed: {e}")
 
-from app.orchestrator.maintenance.mcp_client import mcp_client
+from app.core_workflows.maintenance.mcp_client import mcp_client
 
 async def main():
     print("\n--- Starting Stage 1 Maintenance Workflow Tests ---\n")

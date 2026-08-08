@@ -4,7 +4,7 @@ import os
 
 # Add the root directory to sys.path so we can import the mcp_client
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from app.orchestrator.maintenance.mcp_client import MaintenanceMCPClient
+from app.core_workflows.maintenance.mcp_client import MaintenanceMCPClient
 
 async def main():
     print("--- Starting Standalone MCP Client Test ---")

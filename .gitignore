@@ -9,4 +9,13 @@ realestate_agent/
 realestate-agent/
 venv/
 .venv/
-env/
+env/
+
+# Scratch DB / cache files that shouldn't be committed
+elarion.db
+*.pytest_cache/
+**/checkpoints.db
+
+# Temporary holding folder for files flagged as dead code during the
+# production readiness review -- delete this folder once confirmed unneeded.
+_DELETE_ME_leftover_files/

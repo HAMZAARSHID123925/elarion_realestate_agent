@@ -1,0 +1,39 @@
+"""
+Maintenance workflow nodes, split one-node-per-file.
+
+This __init__.py re-exports every node so existing imports like:
+
+    from app.core_workflows.maintenance.nodes import (
+        receptionist_node,
+        issue_collection_node,
+        ...
+    )
+
+keep working exactly as before — nothing in graph.py needs to change.
+"""
+
+from app.core_workflows.maintenance.nodes.receptionist_node import receptionist_node
+from app.core_workflows.maintenance.nodes.issue_collection_node import issue_collection_node
+from app.core_workflows.maintenance.nodes.validation_node import validation_node
+from app.core_workflows.maintenance.nodes.priority_detection_node import priority_detection_node
+from app.core_workflows.maintenance.nodes.escalation_node import escalation_node
+from app.core_workflows.maintenance.nodes.request_builder_node import request_builder_node
+from app.core_workflows.maintenance.nodes.ticket_creation_node import ticket_creation_node
+from app.core_workflows.maintenance.nodes.vendor_matching_node import vendor_matching_node
+from app.core_workflows.maintenance.nodes.human_approval_node import human_approval_node
+from app.core_workflows.maintenance.nodes.vendor_assignment_node import vendor_assignment_node
+from app.core_workflows.maintenance.nodes.response_generator_node import response_generator_node
+
+__all__ = [
+    "receptionist_node",
+    "issue_collection_node",
+    "validation_node",
+    "priority_detection_node",
+    "escalation_node",
+    "request_builder_node",
+    "ticket_creation_node",
+    "vendor_matching_node",
+    "human_approval_node",
+    "vendor_assignment_node",
+    "response_generator_node",
+]

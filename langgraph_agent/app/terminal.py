@@ -20,8 +20,8 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from app.pipeline import invoke_pipeline, resume_pipeline
-from app.orchestrator.maintenance.mcp_client import mcp_client as maintenance_mcp
-from app.orchestrator.faq.mcp_client import property_mcp_client as faq_mcp
+from app.core_workflows.maintenance.mcp_client import mcp_client as maintenance_mcp
+from app.core_workflows.faq.mcp_client import property_mcp_client as faq_mcp
 
 async def main():
     print("Starting up and connecting to tools... Please wait.")
