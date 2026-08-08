@@ -38,6 +38,7 @@ from app.department_nodes import (
     run_maintenance,
     run_faq,
     run_rent_renewal,
+    run_rent_reminder,
     fallback_node,
 )
 
@@ -87,6 +88,7 @@ def build_pipeline_graph() -> StateGraph:
     workflow.add_node("maintenance", run_maintenance)
     workflow.add_node("faq", run_faq)
     workflow.add_node("rent_renewal", run_rent_renewal)
+    workflow.add_node("rent_reminder", run_rent_reminder)
     workflow.add_node("fallback", fallback_node)
     workflow.add_node("compose_response", compose_response)
 
@@ -107,6 +109,7 @@ def build_pipeline_graph() -> StateGraph:
     workflow.add_edge("maintenance", "compose_response")
     workflow.add_edge("faq", "compose_response")
     workflow.add_edge("rent_renewal", "compose_response")
+    workflow.add_edge("rent_reminder", "compose_response")
     workflow.add_edge("fallback", "compose_response")
     workflow.add_edge("compose_response", END)
 
