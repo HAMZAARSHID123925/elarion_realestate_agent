@@ -20,6 +20,7 @@ from app.pipeline import handle_request
 from app.checkpointer import close_checkpointer
 from app.core_workflows.maintenance.mcp_client import mcp_client as maintenance_mcp
 from app.core_workflows.faq.mcp_client import property_mcp_client as faq_mcp
+from app.core_workflows.rent_reminder.scheduler import rent_scheduler
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,9 +48,17 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Failed to connect FAQ MCP client -- full traceback above.")
 
+    logger.info("Starting automated morning rent reminder scheduler...")
+    try:
+        rent_scheduler.start()
+        logger.info("Automated morning rent scheduler running.")
+    except Exception as e:
+        logger.error(f"Failed to start rent scheduler: {e}")
+
     yield
 
-    logger.info("Shutting down -- disconnecting MCP clients and checkpointer...")
+    logger.info("Shutting down -- stopping rent scheduler, disconnecting MCP clients and checkpointer...")
+    await rent_scheduler.stop()
     await maintenance_mcp.disconnect()
     await faq_mcp.disconnect()
     await close_checkpointer()

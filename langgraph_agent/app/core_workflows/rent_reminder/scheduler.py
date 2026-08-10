@@ -1,16 +1,16 @@
 """
 Daily Scheduler & Batch Runner for Rent Reminder & Escalation Workflows.
-Implements Section 4 & 5 of the PDF Blueprint.
+Implements automated morning scheduling, 30-day billing cycle checks based on joining date, 31-35 day warnings, and Day 36 direct human transfer.
 """
 import logging
 import sys
 import os
-from datetime import date
-from typing import Dict, Any, List
+import asyncio
+from datetime import date, datetime, time
+from typing import Dict, Any, List, Optional
 
 # Ensure workspace root is in sys.path so 'database' can be imported from any CWD
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")))
-
 
 from app.core_workflows.rent_reminder.graph import rent_reminder_graph
 from database.rent_models import get_unpaid_overdue_tenants, seed_sample_tenants
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 def run_daily_rent_reminder_workflow(current_date_str: str = None) -> Dict[str, Any]:
     """
-    Executes the daily automated scan for overdue rent records.
+    Executes the daily automated scan for overdue rent records based on joining dates & 30-day cycles.
     Iterates through candidates and runs the rent_reminder_graph for each.
     """
     if not current_date_str:
@@ -46,6 +46,7 @@ def run_daily_rent_reminder_workflow(current_date_str: str = None) -> Dict[str, 
             "tenant_name": candidate["tenant_name"],
             "tenant_phone": candidate["tenant_phone"],
             "property_address": candidate["property_address"],
+            "joining_date": candidate.get("joining_date"),
             "rent_amount": candidate["rent_amount"],
             "rent_due_date": candidate["rent_due_date"],
             "reminder_30_sent_at": candidate["reminder_30_sent_at"],
@@ -88,6 +89,76 @@ def run_daily_rent_reminder_workflow(current_date_str: str = None) -> Dict[str, 
 
     return summary
 
+
+class AutomatedRentScheduler:
+    """
+    Production-Ready Asynchronous Scheduler Engine for Daily Morning Rent Checks.
+    Runs every morning at a configurable target time (e.g. 08:00 AM) or interval.
+    """
+    def __init__(self, run_hour: int = 8, run_minute: int = 0, interval_seconds: Optional[int] = None):
+        self.run_hour = run_hour
+        self.run_minute = run_minute
+        self.interval_seconds = interval_seconds
+        self._task: Optional[asyncio.Task] = None
+        self._running = False
+
+    async def _scheduler_loop(self):
+        logger.info(f"[AutomatedRentScheduler] Started background scheduler loop (Target morning time: {self.run_hour:02d}:{self.run_minute:02d} AM).")
+        while self._running:
+            try:
+                if self.interval_seconds:
+                    await asyncio.sleep(self.interval_seconds)
+                else:
+                    # Calculate seconds until next target morning time
+                    now = datetime.now()
+                    target_today = datetime.combine(now.date(), time(self.run_hour, self.run_minute))
+                    if now >= target_today:
+                        # Target time already passed today, schedule for tomorrow
+                        target_next = target_today.replace(day=now.day + 1)
+                    else:
+                        target_next = target_today
+                    
+                    delay = (target_next - now).total_seconds()
+                    logger.info(f"[AutomatedRentScheduler] Sleeping for {delay:.1f} seconds until next scheduled run at {target_next}.")
+                    await asyncio.sleep(delay)
+
+                if self._running:
+                    logger.info("[AutomatedRentScheduler] Triggering morning rent reminder batch workflow execution...")
+                    summary = run_daily_rent_reminder_workflow()
+                    logger.info(f"[AutomatedRentScheduler] Morning run summary: {summary}")
+
+            except asyncio.CancelledError:
+                logger.info("[AutomatedRentScheduler] Scheduler loop cancelled.")
+                break
+            except Exception as e:
+                logger.exception(f"[AutomatedRentScheduler] Error during scheduled execution: {e}")
+                # Wait 60 seconds before retrying on failure to avoid rapid retry loops
+                await asyncio.sleep(60)
+
+    def start(self):
+        """Starts the background scheduler task."""
+        if not self._running:
+            self._running = True
+            self._task = asyncio.create_task(self._scheduler_loop())
+            logger.info("[AutomatedRentScheduler] Background scheduler task initialized.")
+
+    async def stop(self):
+        """Gracefully stops the background scheduler task."""
+        if self._running:
+            self._running = False
+            if self._task:
+                self._task.cancel()
+                try:
+                    await self._task
+                except asyncio.CancelledError:
+                    pass
+            logger.info("[AutomatedRentScheduler] Scheduler stopped cleanly.")
+
+
+# Global singleton instance for app lifespan integration
+rent_scheduler = AutomatedRentScheduler(run_hour=8, run_minute=0)
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     print("Seeding sample tenant data...")
@@ -95,3 +166,4 @@ if __name__ == "__main__":
     print("Executing daily workflow run...")
     results = run_daily_rent_reminder_workflow(current_date_str="2026-08-05")
     print(f"Results Summary: {results}")
+
