@@ -1,3 +1,17 @@
+<<<<<<< HEAD
+.env
+**/.env
+__pycache__/
+*.pyc
+*.py[cod]
+
+# Virtual Environments
+realestate_agent/
+realestate-agent/
+venv/
+.venv/
+env/
+=======
 .env
 **/.env
 __pycache__/
@@ -16,3 +30,4 @@ elarion.db
 # Temporary holding folder for files flagged as dead code during the
 # production readiness review -- delete this folder once confirmed unneeded.
 _DELETE_ME_leftover_files/
+>>>>>>> main
