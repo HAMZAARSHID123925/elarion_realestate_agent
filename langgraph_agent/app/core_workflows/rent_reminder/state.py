@@ -24,6 +24,7 @@ class RentReminderState(TypedDict, total=False):
     payment_status: str
     current_date: str
     action: str  # "SEND_REMINDER" | "SEND_FOLLOWUP" | "ESCALATE" | "SKIP"
+    error: Optional[str]  # e.g. "tenant_not_found"
     last_reminder_status: str
     notification_status: str
     logs: List[str]

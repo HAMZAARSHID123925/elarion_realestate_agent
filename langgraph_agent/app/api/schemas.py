@@ -1,0 +1,242 @@
+"""
+Pydantic Request and Response Schemas — Phase 4 & Phase 5.
+"""
+from typing import List, Dict, Any, Optional
+from datetime import datetime, date
+from pydantic import BaseModel, Field
+
+
+# ── Error Envelope ────────────────────────────────────────────────────────────
+
+class ErrorResponse(BaseModel):
+    error: str = Field(description="Error code identifier")
+    message: str = Field(description="Human-readable error explanation")
+    status_code: int = Field(description="HTTP status code")
+    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+
+
+# ── Health & Readiness ────────────────────────────────────────────────────────
+
+class HealthResponse(BaseModel):
+    status: str = "healthy"
+    service: str = "elarion-core-api"
+    version: str = "2.0"
+    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+
+
+class ReadinessResponse(BaseModel):
+    status: str
+    database: str
+    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+
+
+# ── Tenants ───────────────────────────────────────────────────────────────────
+
+class TenantSummaryResponse(BaseModel):
+    tenant_id: str
+    tenant_name: Optional[str] = None
+    property_address: Optional[str] = None
+    rent_due_date: Optional[str] = None
+    rent_amount: float = 0.0
+    payment_status: Optional[str] = "overdue"
+    manual_hold: bool = False
+    last_reminder_status: Optional[str] = "none"
+
+
+class TenantDetailResponse(TenantSummaryResponse):
+    property_id: Optional[str] = None
+    unit_id: Optional[str] = None
+    tenant_phone: Optional[str] = None
+    phone_or_email: Optional[str] = None
+    last_payment_date: Optional[str] = None
+    reminder_30_sent_at: Optional[str] = None
+    reminder_5_sent_at: Optional[str] = None
+    response_received: bool = False
+    human_escalated: bool = False
+    escalation_reason: Optional[str] = None
+    created_at: Optional[Any] = None
+    updated_at: Optional[Any] = None
+
+
+class ManualHoldRequest(BaseModel):
+    manual_hold: bool = Field(description="Set to true to suppress automated rent reminders, false to resume")
+
+
+class ManualHoldResponse(BaseModel):
+    tenant_id: str
+    manual_hold: bool
+    message: str
+
+
+# ── Properties & Units ────────────────────────────────────────────────────────
+
+class PropertyResponse(BaseModel):
+    property_id: str
+    title: Optional[str] = None
+    address: str
+    city: Optional[str] = None
+    property_type: Optional[str] = None
+    price_lakhs: float = 0.0
+    created_at: Optional[Any] = None
+
+
+class UnitResponse(BaseModel):
+    unit_id: str
+    property_id: str
+    unit_number: str
+    created_at: Optional[Any] = None
+
+
+class PropertyDetailResponse(PropertyResponse):
+    units: List[UnitResponse] = []
+
+
+# ── Maintenance Tickets ───────────────────────────────────────────────────────
+
+class TicketCreateRequest(BaseModel):
+    tenant_id: str = Field(description="Tenant ID reporting the issue")
+    property_id: Optional[str] = Field(default=None, description="Property ID if known")
+    unit_id: Optional[str] = Field(default=None, description="Unit ID if known")
+    category: str = Field(description="Issue category: plumbing, electrical, hvac, general, security")
+    description: str = Field(description="Detailed issue description")
+    urgency: str = Field(default="low", description="Urgency: low, medium, high")
+    permission_to_enter: str = Field(default="unconfirmed", description="yes, no, unconfirmed")
+    pets_present: str = Field(default="unconfirmed", description="yes, no, unconfirmed")
+    created_by: Optional[str] = Field(default="api_user")
+
+
+class TicketResponse(BaseModel):
+    ticket_id: str
+    tenant_id: Optional[str] = None
+    property_id: Optional[str] = None
+    unit_id: Optional[str] = None
+    category: str
+    description: Optional[str] = None
+    urgency: Optional[str] = "low"
+    status: str = "OPEN"
+    vendor_id: Optional[str] = None
+    assignment_status: str = "UNASSIGNED"
+    created_at: Optional[Any] = None
+
+
+class TicketStatusLogResponse(BaseModel):
+    log_id: int
+    ticket_id: str
+    old_status: Optional[str] = None
+    new_status: str
+    timestamp: Optional[Any] = None
+
+
+class TicketDetailResponse(TicketResponse):
+    status_history: List[TicketStatusLogResponse] = []
+
+
+# ── Workflow Execution ────────────────────────────────────────────────────────
+
+class RentReminderRunResponse(BaseModel):
+    status: str = "completed"
+    records_scanned: int = 0
+    reminders_sent: int = 0
+    followups_sent: int = 0
+    escalated: int = 0
+    skipped: int = 0
+    errors: List[str] = []
+
+
+class RentReminderEvaluateRequest(BaseModel):
+    tenant_id: str = Field(description="Tenant ID to evaluate")
+    current_date: Optional[str] = Field(default=None, description="Reference date YYYY-MM-DD (defaults to today)")
+
+
+class RentReminderEvaluateResponse(BaseModel):
+    tenant_id: str
+    action: str
+    last_reminder_status: str
+    days_overdue: int
+    rent_amount: float
+    logs: List[str] = []
+    error: Optional[str] = None
+
+
+class LeaseExpiryScanResponse(BaseModel):
+    status: str = "completed"
+    scanned: int = 0
+    events_created: int = 0
+    run_id: str
+
+
+class RenewalReminderScanResponse(BaseModel):
+    status: str = "completed"
+    scanned: int = 0
+    reminders_sent: int = 0
+    run_id: str
+
+
+# ── FAQ & Master Pipeline ─────────────────────────────────────────────────────
+
+class FAQQueryRequest(BaseModel):
+    query: str = Field(description="Question regarding building policy or property search")
+    user_id: Optional[str] = Field(default="api_user", description="Identifier for session tracking")
+
+
+class FAQQueryResponse(BaseModel):
+    query: str
+    answer: str
+    user_id: str
+
+
+class PipelineMessageRequest(BaseModel):
+    channel: str = Field(default="api", description="Channel identifier (api, web, chat)")
+    user_id: str = Field(description="Unique tenant or client user identifier")
+    text: str = Field(description="Message text to process through the master pipeline")
+    channel_metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+
+class PipelineMessageResponse(BaseModel):
+    channel: str
+    user_id: str
+    final_response: str
+    intent: Optional[str] = None
+    active_department: Optional[str] = None
+
+
+# ── Jobs & Alerting (Phase 5) ─────────────────────────────────────────────────
+
+class JobInfoResponse(BaseModel):
+    job_name: str
+    description: str
+    domain: str
+    default_cadence: str
+    is_locked: bool = False
+    last_run: Optional[Dict[str, Any]] = None
+
+
+class JobRunResponse(BaseModel):
+    job_name: str
+    status: str
+    attempts: int = 1
+    duration_ms: Optional[float] = None
+    result_summary: Optional[Any] = None
+    error: Optional[str] = None
+
+
+class DeadLetterRecordResponse(BaseModel):
+    dead_letter_id: str
+    job_name: str
+    status: str
+    attempts: int
+    started_at: str
+    failed_at: str
+    duration_ms: float
+    error_type: str
+    error_message: str
+
+
+class AlertRecordResponse(BaseModel):
+    alert_id: str
+    alert_type: str
+    severity: str
+    message: str
+    metadata: Dict[str, Any]
+    dispatched_at: str
+    status: str

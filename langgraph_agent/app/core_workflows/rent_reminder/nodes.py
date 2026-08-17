@@ -1,57 +1,124 @@
 """
-LangGraph Nodes for Rent Reminder & Human Escalation Workflows.
-Implements nodes specified in Blueprint Section 8 & 11.
+LangGraph Nodes for Rent Reminder & Human Escalation Workflows — Phase 3 Live Data Wired.
+Implements nodes specified in Blueprint Section 8 & 11 and SDD 03, 05, 06, 07.
 """
 import logging
 import sys
 import os
 from datetime import datetime, date
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 # Ensure project root (elarion_realestate_agent) is in path for database module
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")))
 
-
 from app.core_workflows.rent_reminder.state import RentReminderState
-from database.rent_models import update_tenant_reminder_status
+from database.rent_models import update_tenant_reminder_status, get_tenant_by_id
 
 logger = logging.getLogger(__name__)
 
 
-def parse_date(date_str: str) -> date:
-    """Helper to parse YYYY-MM-DD or ISO timestamp into date object."""
+def parse_date(date_str: Optional[Any]) -> Optional[date]:
+    """Helper to parse YYYY-MM-DD, ISO timestamp, or date object into date object."""
     if not date_str:
         return None
-    if "T" in date_str:
-        return datetime.fromisoformat(date_str).date()
-    return datetime.strptime(date_str, "%Y-%m-%d").date()
+    if isinstance(date_str, date):
+        return date_str
+    if isinstance(date_str, datetime):
+        return date_str.date()
+    date_str_clean = str(date_str).strip()
+    if not date_str_clean:
+        return None
+    if "T" in date_str_clean:
+        return datetime.fromisoformat(date_str_clean).date()
+    if " " in date_str_clean:
+        return datetime.strptime(date_str_clean.split(" ")[0], "%Y-%m-%d").date()
+    return datetime.strptime(date_str_clean, "%Y-%m-%d").date()
+
 
 def payment_check_node(state: RentReminderState) -> Dict[str, Any]:
     """
     NODE: payment_check_node
-    Purpose: Computes days_overdue from current_date and rent_due_date.
+    Purpose: Validates tenant data, hydrates live record from TenantRepository/database
+    if fields are unpopulated, and computes days_overdue from current_date and rent_due_date.
     """
-    curr_date = parse_date(state.get("current_date", date.today().isoformat()))
-    due_date = parse_date(state.get("rent_due_date"))
+    logs = list(state.get("logs", []))
+    tenant_id = state.get("tenant_id")
+    curr_date_raw = state.get("current_date") or date.today().isoformat()
+    curr_date = parse_date(curr_date_raw) or date.today()
 
-    days_overdue = (curr_date - due_date).days if due_date else 0
-    logs = state.get("logs", [])
-    logs.append(f"[payment_check_node] Calculated days_overdue={days_overdue} for tenant {state.get('tenant_id')}")
+    updates: Dict[str, Any] = {"current_date": curr_date_raw}
 
-    return {
-        "days_overdue": days_overdue,
-        "logs": logs
-    }
+    # If tenant_id is provided but essential fields are missing from state, fetch live record
+    if tenant_id and (not state.get("rent_due_date") or not state.get("property_address")):
+        tenant_record = get_tenant_by_id(tenant_id)
+        if not tenant_record:
+            logs.append(f"[payment_check_node] Tenant {tenant_id} not found in database")
+            updates["action"] = "SKIP"
+            updates["error"] = "tenant_not_found"
+            updates["days_overdue"] = 0
+            updates["logs"] = logs
+            return updates
+
+        # Hydrate state from live database record
+        t_name = tenant_record.get("tenant_name") or tenant_record.get("name") or state.get("tenant_name")
+        p_addr = tenant_record.get("property_address") or state.get("property_address")
+        r_due = str(tenant_record.get("rent_due_date")) if tenant_record.get("rent_due_date") else None
+        r_amt = float(tenant_record.get("rent_amount") or 0.0) if tenant_record.get("rent_amount") is not None else state.get("rent_amount", 0.0)
+        p_stat = tenant_record.get("payment_status") or state.get("payment_status", "overdue")
+        r30 = str(tenant_record.get("reminder_30_sent_at")) if tenant_record.get("reminder_30_sent_at") else state.get("reminder_30_sent_at")
+        r5 = str(tenant_record.get("reminder_5_sent_at")) if tenant_record.get("reminder_5_sent_at") else state.get("reminder_5_sent_at")
+        resp_rec = bool(tenant_record.get("response_received", False)) if "response_received" in tenant_record else state.get("response_received", False)
+        h_esc = bool(tenant_record.get("human_escalated", False)) if "human_escalated" in tenant_record else state.get("human_escalated", False)
+        esc_reas = tenant_record.get("escalation_reason") or state.get("escalation_reason")
+        m_hold = bool(tenant_record.get("manual_hold", False)) if "manual_hold" in tenant_record else state.get("manual_hold", False)
+        last_rem = tenant_record.get("last_reminder_status") or state.get("last_reminder_status", "none")
+
+        updates.update({
+            "tenant_name": t_name,
+            "property_address": p_addr,
+            "rent_due_date": r_due,
+            "rent_amount": r_amt,
+            "payment_status": p_stat,
+            "reminder_30_sent_at": r30,
+            "reminder_5_sent_at": r5,
+            "response_received": resp_rec,
+            "human_escalated": h_esc,
+            "escalation_reason": esc_reas,
+            "manual_hold": m_hold,
+            "last_reminder_status": last_rem,
+        })
+        due_date_str = r_due
+    else:
+        due_date_str = state.get("rent_due_date")
+
+    due_date = parse_date(due_date_str) if due_date_str else None
+    days_overdue = (curr_date - due_date).days if (due_date and curr_date) else 0
+
+    logs.append(f"[payment_check_node] Calculated days_overdue={days_overdue} for tenant {tenant_id}")
+    updates["days_overdue"] = days_overdue
+    updates["logs"] = logs
+
+    return updates
+
 
 def reminder_decision_node(state: RentReminderState) -> Dict[str, Any]:
     """
     NODE: reminder_decision_node
-    Purpose: Pure Python decision engine evaluating rules.
+    Purpose: Pure Python decision engine evaluating business rules.
     Decides action: SEND_REMINDER | SEND_FOLLOWUP | ESCALATE | SKIP
     """
-    logs = state.get("logs", [])
+    logs = list(state.get("logs", []))
+
+    # If already set to SKIP (e.g. tenant not found), preserve decision
+    if state.get("error") == "tenant_not_found":
+        logs.append("[reminder_decision_node] Skipping decision: tenant_not_found")
+        return {
+            "action": "SKIP",
+            "error": "tenant_not_found",
+            "logs": logs
+        }
+
     curr_date = parse_date(state.get("current_date", date.today().isoformat()))
-    
     payment_status = state.get("payment_status", "overdue")
     manual_hold = state.get("manual_hold", False)
     days_overdue = state.get("days_overdue", 0)
@@ -93,6 +160,7 @@ def reminder_decision_node(state: RentReminderState) -> Dict[str, Any]:
         "logs": logs
     }
 
+
 def reminder_send_node(state: RentReminderState) -> Dict[str, Any]:
     """
     NODE: reminder_send_node
@@ -101,11 +169,11 @@ def reminder_send_node(state: RentReminderState) -> Dict[str, Any]:
     action = state.get("action")
     tenant_id = state.get("tenant_id")
     tenant_name = state.get("tenant_name")
-    rent_amount = state.get("rent_amount")
+    rent_amount = state.get("rent_amount", 0.0)
     property_address = state.get("property_address")
     due_date = state.get("rent_due_date")
     curr_date = state.get("current_date", date.today().isoformat())
-    logs = state.get("logs", [])
+    logs = list(state.get("logs", []))
 
     if action == "SEND_REMINDER":
         message_body = (
@@ -147,18 +215,20 @@ def reminder_send_node(state: RentReminderState) -> Dict[str, Any]:
 
     return {
         "last_reminder_status": status,
-        "notification_status": "delivered",
+        "notification_status": "delivered" if action in ("SEND_REMINDER", "SEND_FOLLOWUP") else "none",
         "logs": logs
     }
+
 
 def followup_tracker_node(state: RentReminderState) -> Dict[str, Any]:
     """
     NODE: followup_tracker_node
     Purpose: Ensures audit logging & idempotency tracking after notification dispatch.
     """
-    logs = state.get("logs", [])
+    logs = list(state.get("logs", []))
     logs.append(f"[followup_tracker_node] Audited reminder status='{state.get('last_reminder_status')}' for tenant {state.get('tenant_id')}")
     return {"logs": logs}
+
 
 def human_escalation_node(state: RentReminderState) -> Dict[str, Any]:
     """
@@ -167,25 +237,7 @@ def human_escalation_node(state: RentReminderState) -> Dict[str, Any]:
     """
     tenant_id = state.get("tenant_id")
     escalation_reason = "No payment and no response after two automated reminders."
-    logs = state.get("logs", [])
-
-    escalation_alert_payload = {
-        "alert_type": "ESCALATION_ALERT_OVERDUE_RENT",
-        "tenant_id": tenant_id,
-        "tenant_name": state.get("tenant_name"),
-        "property_address": state.get("property_address"),
-        "rent_amount": state.get("rent_amount"),
-        "due_date": state.get("rent_due_date"),
-        "days_overdue": state.get("days_overdue"),
-        "reminder_1_sent": state.get("reminder_30_sent_at"),
-        "reminder_2_sent": state.get("reminder_5_sent_at"),
-        "escalation_reason": escalation_reason,
-        "recommended_actions": [
-            "Contact tenant directly by phone",
-            "Issue formal legal notice if no response within 48 hours",
-            "Update case status in system"
-        ]
-    }
+    logs = list(state.get("logs", []))
 
     update_tenant_reminder_status(
         tenant_id=tenant_id,

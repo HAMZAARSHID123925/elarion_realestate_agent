@@ -19,6 +19,16 @@ from dotenv import load_dotenv
 # Ensure project root is on path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
+# Try loading .env from project root, then langgraph_agent directory, then default cwd
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+env_paths = [
+    os.path.join(root_dir, ".env"),
+    os.path.join(root_dir, "langgraph_agent", ".env"),
+]
+for env_path in env_paths:
+    if os.path.exists(env_path):
+        load_dotenv(env_path)
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
