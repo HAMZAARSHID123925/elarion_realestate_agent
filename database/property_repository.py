@@ -120,8 +120,70 @@ class PropertyRepository:
                     (property_id,)
                 )
                 rows = await cur.fetchall()
+                rows = await cur.fetchall()
                 return [dict(r) for r in rows]
 
+    async def create_property(self, data: Dict[str, Any]) -> str:
+        """
+        Creates a new property record.
+        """
+        db_url = self._url()
+        property_id = data.get("property_id")
+        if not property_id:
+            import uuid
+            property_id = f"P-{uuid.uuid4().hex[:8].upper()}"
+
+        fields = ["property_id", "title", "address", "city", "property_type", "price_lakhs"]
+        
+        values_list = []
+        for f in fields:
+            if f == "property_id":
+                values_list.append(property_id)
+            else:
+                values_list.append(data.get(f))
+                
+        placeholders = ", ".join(["%s"] * len(fields))
+        columns = ", ".join(fields)
+        
+        sql = f"INSERT INTO properties ({columns}) VALUES ({placeholders}) RETURNING property_id;"
+        
+        async with await psycopg.AsyncConnection.connect(db_url) as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(sql, values_list)
+                result = await cur.fetchone()
+                await conn.commit()
+                return result[0] if result else property_id
+
+    async def update_property(self, property_id: str, data: Dict[str, Any]) -> bool:
+        """
+        Updates an existing property record.
+        """
+        if not data:
+            return True
+
+        db_url = self._url()
+        updates = []
+        params = []
+        
+        allowed_fields = ["title", "address", "city", "property_type", "price_lakhs"]
+        
+        for k, v in data.items():
+            if k in allowed_fields and v is not None:
+                updates.append(f"{k} = %s")
+                params.append(v)
+                
+        if not updates:
+            return True
+            
+        params.append(property_id)
+        
+        sql = f"UPDATE properties SET {', '.join(updates)} WHERE property_id = %s;"
+        
+        async with await psycopg.AsyncConnection.connect(db_url) as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(sql, params)
+                await conn.commit()
+                return cur.rowcount > 0
 
 # Shared singleton instance
 property_repository = PropertyRepository()

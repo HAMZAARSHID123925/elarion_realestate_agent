@@ -10,6 +10,8 @@ from app.api.schemas import (
     TenantDetailResponse,
     ManualHoldRequest,
     ManualHoldResponse,
+    TenantCreateRequest,
+    TenantUpdateRequest,
 )
 from app.api.auth import require_auth, require_service_or_admin, AuthenticatedUser
 from database.tenant_repository import tenant_repository
@@ -29,10 +31,16 @@ router = APIRouter(prefix="/api/v1/tenants", tags=["Tenants"])
 async def list_tenants(
     ref_date: Optional[str] = Query(None, description="Reference date YYYY-MM-DD for overdue calculation"),
     overdue_only: bool = Query(True, description="Filter for tenants whose rent is unpaid and overdue"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     user: AuthenticatedUser = Security(require_auth)
 ) -> List[TenantSummaryResponse]:
     try:
-        tenants = await tenant_repository.get_unpaid_overdue_tenants(ref_date)
+        if overdue_only:
+            tenants = await tenant_repository.get_unpaid_overdue_tenants(ref_date=ref_date)
+        else:
+            tenants = await tenant_repository.list_tenants(limit=limit, offset=offset)
+            
         return [
             TenantSummaryResponse(
                 tenant_id=t.get("tenant_id"),
@@ -100,6 +108,58 @@ async def get_tenant(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch tenant: {str(e)}"
+        )
+
+
+@router.post(
+    "",
+    response_model=TenantDetailResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create Tenant",
+    description="Creates a new tenant record."
+)
+async def create_tenant(
+    payload: TenantCreateRequest,
+    user: AuthenticatedUser = Security(require_auth)
+) -> TenantDetailResponse:
+    try:
+        tenant_id = await tenant_repository.create_tenant(payload.model_dump(exclude_unset=True))
+        tenant = await tenant_repository.get_tenant_by_id(tenant_id)
+        return TenantDetailResponse(**tenant)
+    except Exception as e:
+        logger.error(f"Error creating tenant: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create tenant: {str(e)}"
+        )
+
+
+@router.patch(
+    "/{tenant_id}",
+    response_model=TenantDetailResponse,
+    summary="Update Tenant",
+    description="Updates specific fields of an existing tenant."
+)
+async def update_tenant(
+    tenant_id: str,
+    payload: TenantUpdateRequest,
+    user: AuthenticatedUser = Security(require_auth)
+) -> TenantDetailResponse:
+    try:
+        updates = payload.model_dump(exclude_unset=True)
+        success = await tenant_repository.update_tenant(tenant_id, updates)
+        if not success:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+            
+        tenant = await tenant_repository.get_tenant_by_id(tenant_id)
+        return TenantDetailResponse(**tenant)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating tenant {tenant_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update tenant: {str(e)}"
         )
 
 

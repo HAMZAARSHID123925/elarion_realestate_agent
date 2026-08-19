@@ -10,6 +10,7 @@ from app.api.schemas import (
     TicketResponse,
     TicketDetailResponse,
     TicketStatusLogResponse,
+    TicketUpdateRequest,
 )
 from app.api.auth import require_auth, AuthenticatedUser
 from database.maintenance_repository import maintenance_repository
@@ -117,6 +118,52 @@ async def create_ticket(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create maintenance ticket: {str(e)}"
+        )
+
+
+@router.patch(
+    "/tickets/{ticket_id}",
+    response_model=TicketDetailResponse,
+    summary="Update Maintenance Ticket",
+    description="Updates specific fields of an existing maintenance ticket (e.g. status, vendor assignment)."
+)
+async def update_ticket(
+    ticket_id: str,
+    payload: TicketUpdateRequest,
+    request: Request,
+    user: AuthenticatedUser = Security(require_auth)
+) -> TicketDetailResponse:
+    request_id = getattr(request.state, "request_id", None)
+    try:
+        updates = payload.model_dump(exclude_unset=True)
+        success = await maintenance_repository.update_ticket(ticket_id, updates)
+        if not success:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
+
+        # Log audit
+        await audit_repository.create_audit_log(
+            action="TICKET_UPDATE",
+            actor=f"{user.role}:{user.key_identifier}",
+            details=f"Updated ticket {ticket_id}",
+            after_state=updates,
+            request_id=request_id
+        )
+
+        # Refetch full ticket
+        ticket_data = await maintenance_repository.get_ticket_by_id(ticket_id)
+        status_log = await maintenance_repository.get_ticket_status_log(ticket_id)
+        
+        return TicketDetailResponse(
+            **ticket_data,
+            status_history=[TicketStatusLogResponse(**sl) for sl in status_log]
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating maintenance ticket {ticket_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update maintenance ticket: {str(e)}"
         )
 
 

@@ -44,12 +44,15 @@ def record_job_metric(job_name: str, status: str, is_failure: bool = False):
         _JOB_FAILURES[f'job_name="{job_name}"'] += 1
 
 
+from fastapi import APIRouter, Response, Security, Depends
+from app.api.auth import require_admin, AuthenticatedUser
+
 @router.get(
     "/metrics",
     summary="Prometheus Metrics",
     description="Returns standard Prometheus text-format metrics for monitoring and observability."
 )
-async def get_metrics() -> Response:
+async def get_metrics(user: AuthenticatedUser = Security(require_admin)) -> Response:
     """
     Generates standard Prometheus exposition format.
     """

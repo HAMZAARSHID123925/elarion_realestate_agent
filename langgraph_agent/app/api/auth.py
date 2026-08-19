@@ -78,16 +78,17 @@ async def get_current_user(
 ) -> AuthenticatedUser:
     """
     Authenticates incoming request via X-API-Key or Bearer token.
+    Attempts JWT decoding first; if invalid or missing, falls back to static configured API keys.
     If auth is not enabled, returns a default system user.
     """
     if not is_auth_enabled():
         return AuthenticatedUser(key_identifier="anonymous_dev", role="admin")
 
     token = None
-    if api_key:
-        token = api_key.strip()
-    elif bearer and bearer.credentials:
+    if bearer and bearer.credentials:
         token = bearer.credentials.strip()
+    elif api_key:
+        token = api_key.strip()
 
     if not token:
         logger.warning(f"Unauthenticated request to {request.url.path} from client {request.client.host if request.client else 'unknown'}")
@@ -96,6 +97,15 @@ async def get_current_user(
             detail="Missing API authentication credentials. Provide 'X-API-Key' or 'Authorization: Bearer <key>'."
         )
 
+    # 1. Attempt JWT decoding first
+    # We must inline the import or ensure auth_service is available, but to avoid circular dependencies
+    # we'll import here or at the top. Let's import at the top later.
+    from app.services.auth_service import auth_service
+    payload = auth_service.verify_access_token(token)
+    if payload and "sub" in payload and "role" in payload:
+        return AuthenticatedUser(key_identifier=payload["sub"], role=payload["role"])
+
+    # 2. Fall back to static API keys (service to service)
     key_role_map = _load_configured_keys()
     role = key_role_map.get(token)
 
@@ -103,7 +113,7 @@ async def get_current_user(
         logger.warning(f"Invalid API key attempt on {request.url.path}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API key or authentication token."
+            detail="Invalid authentication token or API key."
         )
 
     masked_key = f"{token[:4]}...{token[-2:]}" if len(token) > 6 else "***"

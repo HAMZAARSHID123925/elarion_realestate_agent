@@ -210,7 +210,62 @@ class MaintenanceRepository:
                     (ticket_id,)
                 )
                 rows = await cur.fetchall()
+                rows = await cur.fetchall()
                 return [dict(r) for r in rows]
+
+    async def update_ticket(self, ticket_id: str, updates: Dict[str, Any]) -> bool:
+        """
+        Updates specific fields on a maintenance ticket (e.g. status, assigned_vendor_id).
+        """
+        if not updates:
+            return True
+            
+        db_url = self._url()
+        set_clauses = []
+        params = []
+        
+        allowed_fields = [
+            "status", "urgency", "assigned_vendor_id", 
+            "permission_to_enter", "pets_present"
+        ]
+        
+        for k, v in updates.items():
+            if k in allowed_fields:
+                set_clauses.append(f"{k} = %s")
+                params.append(v)
+                
+        if not set_clauses:
+            return True
+            
+        set_clauses.append("updated_at = CURRENT_TIMESTAMP")
+        params.append(ticket_id)
+        
+        sql = f"UPDATE maintenance_tickets SET {', '.join(set_clauses)} WHERE ticket_id = %s RETURNING status;"
+        
+        async with await psycopg.AsyncConnection.connect(db_url) as conn:
+            async with conn.cursor() as cur:
+                # get old status first if we're updating status
+                old_status = None
+                if "status" in updates:
+                    await cur.execute("SELECT status FROM maintenance_tickets WHERE ticket_id = %s;", (ticket_id,))
+                    row = await cur.fetchone()
+                    if row:
+                        old_status = row[0]
+                
+                await cur.execute(sql, params)
+                new_status = updates.get("status")
+                
+                if old_status and new_status and old_status != new_status:
+                    await cur.execute(
+                        """
+                        INSERT INTO ticket_status_log (ticket_id, old_status, new_status)
+                        VALUES (%s, %s, %s);
+                        """,
+                        (ticket_id, old_status, new_status)
+                    )
+                    
+                await conn.commit()
+                return cur.rowcount > 0
 
 
 # Shared singleton instance

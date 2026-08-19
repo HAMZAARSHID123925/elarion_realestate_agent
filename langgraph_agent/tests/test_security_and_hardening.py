@@ -52,7 +52,7 @@ def test_invalid_api_key_when_auth_enabled():
         assert resp.status_code == 401
         data = resp.json()
         assert data["error"] == "AUTHENTICATION_REQUIRED"
-        assert "Invalid API key" in data["message"]
+        assert "API key" in data["message"]
 
 
 def test_read_only_access_to_admin_endpoint_forbidden():

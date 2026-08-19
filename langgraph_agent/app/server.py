@@ -52,6 +52,12 @@ from app.api.routers.workflows import router as workflows_router
 from app.api.routers.faq import router as faq_router
 from app.api.routers.pipeline import router as pipeline_router
 from app.api.routers.jobs import router as jobs_router
+from app.api.routers.dashboard import router as dashboard_router
+from app.api.routers.leases import router as leases_router
+from app.api.routers.renewals import router as renewals_router
+from app.api.routers.escalations import router as escalations_router
+from app.api.routers.documents import router as documents_router
+from app.api.routers.auth import router as auth_router
 
 # Configure structured logging
 configure_logging()
@@ -215,6 +221,12 @@ app.include_router(workflows_router)
 app.include_router(faq_router)
 app.include_router(pipeline_router)
 app.include_router(jobs_router)
+app.include_router(dashboard_router)
+app.include_router(leases_router)
+app.include_router(renewals_router)
+app.include_router(escalations_router)
+app.include_router(documents_router)
+app.include_router(auth_router)
 
 
 # ── CLI Runner ────────────────────────────────────────────────────────────────

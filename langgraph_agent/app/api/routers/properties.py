@@ -9,6 +9,8 @@ from app.api.schemas import (
     PropertyResponse,
     PropertyDetailResponse,
     UnitResponse,
+    PropertyCreateRequest,
+    PropertyUpdateRequest,
 )
 from app.api.auth import require_auth, AuthenticatedUser
 from database.property_repository import property_repository
@@ -105,5 +107,57 @@ async def get_property(
         logger.error(f"Error fetching property {property_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch property: {str(e)}"
+            detail=f"Failed to retrieve property: {str(e)}"
+        )
+
+
+@router.post(
+    "",
+    response_model=PropertyResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create Property",
+    description="Creates a new property record."
+)
+async def create_property(
+    payload: PropertyCreateRequest,
+    user: AuthenticatedUser = Security(require_auth)
+) -> PropertyResponse:
+    try:
+        property_id = await property_repository.create_property(payload.model_dump(exclude_unset=True))
+        prop = await property_repository.get_property_by_id(property_id)
+        return PropertyResponse(**prop)
+    except Exception as e:
+        logger.error(f"Error creating property: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create property: {str(e)}"
+        )
+
+
+@router.patch(
+    "/{property_id}",
+    response_model=PropertyResponse,
+    summary="Update Property",
+    description="Updates specific fields of an existing property."
+)
+async def update_property(
+    property_id: str,
+    payload: PropertyUpdateRequest,
+    user: AuthenticatedUser = Security(require_auth)
+) -> PropertyResponse:
+    try:
+        updates = payload.model_dump(exclude_unset=True)
+        success = await property_repository.update_property(property_id, updates)
+        if not success:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
+            
+        prop = await property_repository.get_property_by_id(property_id)
+        return PropertyResponse(**prop)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating property {property_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update property: {str(e)}"
         )

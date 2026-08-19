@@ -238,5 +238,186 @@ class AlertRecordResponse(BaseModel):
     severity: str
     message: str
     metadata: Dict[str, Any]
-    dispatched_at: str
     status: str
+
+
+# ── Dashboard (Phase 7) ───────────────────────────────────────────────────────
+
+class DashboardMetricsResponse(BaseModel):
+    total_properties: int = 0
+    total_tenants: int = 0
+    active_leases: int = 0
+    open_maintenance_tickets: int = 0
+    open_escalations: int = 0
+    outstanding_rent: float = 0.0
+
+
+# ── Create/Update Envelopes (Phase 7 CRUD) ────────────────────────────────────
+
+class PropertyCreateRequest(BaseModel):
+    title: Optional[str] = None
+    address: str
+    city: Optional[str] = None
+    property_type: Optional[str] = None
+    price_lakhs: float = 0.0
+
+
+class PropertyUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    property_type: Optional[str] = None
+    price_lakhs: Optional[float] = None
+
+
+class TenantCreateRequest(BaseModel):
+    property_id: str
+    unit_id: Optional[str] = None
+    tenant_name: str
+    name: Optional[str] = None
+    tenant_phone: Optional[str] = None
+    phone_or_email: Optional[str] = None
+    property_address: Optional[str] = None
+    rent_amount: float
+    rent_due_date: date
+    payment_status: str = "paid"
+
+
+class TenantUpdateRequest(BaseModel):
+    tenant_name: Optional[str] = None
+    name: Optional[str] = None
+    tenant_phone: Optional[str] = None
+    phone_or_email: Optional[str] = None
+    property_address: Optional[str] = None
+    rent_amount: Optional[float] = None
+    rent_due_date: Optional[date] = None
+    payment_status: Optional[str] = None
+
+
+class TicketUpdateRequest(BaseModel):
+    status: Optional[str] = None
+    urgency: Optional[str] = None
+    assigned_vendor_id: Optional[str] = None
+    permission_to_enter: Optional[str] = None
+    pets_present: Optional[str] = None
+
+
+# ── Leases (Phase 7) ──────────────────────────────────────────────────────────
+
+class LeaseResponse(BaseModel):
+    lease_id: str
+    tenant_id: str
+    property_id: str
+    unit_id: Optional[str] = None
+    lease_start_date: date
+    lease_end_date: date
+    monthly_rent: float
+    status: str
+    created_at: Optional[Any] = None
+
+
+class LeaseExpiryEventResponse(BaseModel):
+    id: int
+    event_name: str
+    lease_id: str
+    tenant_id: str
+    property_id: str
+    expiry_date: date
+    days_remaining: int
+    window_days: int
+    event_date: date
+    event_status: str
+    created_at: Optional[Any] = None
+
+
+# ── Renewals (Phase 7) ────────────────────────────────────────────────────────
+
+class RenewalReminderResponse(BaseModel):
+    reminder_id: int
+    event_id: Optional[int] = None
+    lease_id: str
+    tenant_id: str
+    property_id: Optional[str] = None
+    channel: str
+    recipient: str
+    reminder_type: str
+    status: str
+    sent_at: Any
+    created_at: Optional[Any] = None
+
+
+class RenewalIntentResponse(BaseModel):
+    intent_id: int
+    lease_id: str
+    tenant_id: str
+    tenant_response: str
+    intent: str
+    confidence: float
+    reasoning: Optional[str] = None
+    renewal_status: str
+    requested_term: Optional[int] = None
+    proposed_rent: Optional[float] = None
+    created_at: Optional[Any] = None
+
+
+# ── Escalations (Phase 7) ─────────────────────────────────────────────────────
+
+class EscalationResponse(BaseModel):
+    escalation_id: int
+    lease_id: str
+    tenant_id: str
+    property_id: Optional[str] = None
+    escalation_reason: str
+    escalation_priority: str
+    status: str
+    description: Optional[str] = None
+    assigned_to: Optional[str] = None
+    notified_at: Optional[Any] = None
+    manager_action: Optional[str] = None
+    manager_notes: Optional[str] = None
+    resolved_at: Optional[Any] = None
+    created_at: Optional[Any] = None
+    updated_at: Optional[Any] = None
+
+
+class EscalationResolveRequest(BaseModel):
+    status: Optional[str] = None
+    assigned_to: Optional[str] = None
+    manager_action: Optional[str] = None
+    manager_notes: Optional[str] = None
+
+
+# ── Documents (Phase 7) ───────────────────────────────────────────────────────
+
+class DocumentResponse(BaseModel):
+    document_id: int
+    lease_id: str
+    tenant_id: str
+    doc_type: str
+    file_name: str
+    file_url: Optional[str] = None
+    status: str
+    uploaded_at: Any
+    verified_at: Optional[Any] = None
+    verified_by: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    created_at: Optional[Any] = None
+
+# ── Authentication (Phase 8) ──────────────────────────────────────────────────
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+class UserResponse(BaseModel):
+    user_id: str
+    email: str
+    role: str
+    active: bool
+    created_at: Optional[Any] = None
+    updated_at: Optional[Any] = None
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
