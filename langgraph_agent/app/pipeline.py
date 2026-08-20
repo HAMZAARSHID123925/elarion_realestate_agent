@@ -167,20 +167,34 @@ async def handle_request(
 ) -> str:
     """
     The single production entry point for every channel adapter.
-
-    channel:          "vapi" | "whatsapp" | "email" | "sms" | ...
-    user_id:           caller phone number / chat session id / whatever
-                        identifies this person on this channel
-    raw_text:           what they said/typed this turn
-    channel_metadata:   anything channel-specific worth keeping (call_id,
-                        timestamp, language, session_id for multi-session
-                        channels, etc.)
-
-    Returns the text to speak (VAPI) or send back (WhatsApp/Email/SMS).
+    Logs every conversation turn & system classification to PostgreSQL.
     """
     result, _ = await invoke_pipeline(channel, user_id, raw_text, channel_metadata)
     
+    final_resp = "I'm sorry, something went wrong. Please try again."
     if "__interrupt__" in result:
-        return "I have submitted your request for review. I will notify you as soon as it's approved."
+        final_resp = "I have submitted your request for review. I will notify you as soon as it's approved."
+    else:
+        final_resp = result.get("final_response", final_resp)
+
+    # Log turn to conversation database for Dashboard UI (Atomic Production State Machine)
+    try:
+        from database.conversation_repository import conversation_repository
+        conv_id = f"TF-{hash(user_id) % 100000:05d}"
+        profile_name = (channel_metadata or {}).get("profile_name") or user_id
         
-    return result.get("final_response", "I'm sorry, something went wrong. Please try again.")
+        await conversation_repository.record_turn_and_update_state(
+            conversation_id=conv_id,
+            contact_name=profile_name,
+            channel=channel,
+            tenant_text=raw_text,
+            ai_response=final_resp,
+            intent=result.get("intent"),
+            active_department=result.get("active_department")
+        )
+    except Exception as e:
+        logger.warning(f"Failed to log conversation turn to repository: {e}")
+
+    return final_resp
+
+

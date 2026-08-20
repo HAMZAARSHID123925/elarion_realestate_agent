@@ -1,12 +1,17 @@
 'use client';
 
 import React from 'react';
+import { AutomationStatusItem } from '@/lib/types';
 
-export default function AutomationStatus() {
-  const automations = [
+interface AutomationStatusProps {
+  items?: AutomationStatusItem[];
+}
+
+export default function AutomationStatus({ items }: AutomationStatusProps) {
+  const automations = items && items.length > 0 ? items : [
     { name: 'Maintenance Triage', status: 'Active', badge: 'bg-slate-100 text-slate-600' },
     { name: 'Resident Support', status: 'Active', badge: 'bg-slate-100 text-slate-600' },
-    { name: 'Rent Collection', status: 'Learning', badge: 'bg-amber-50 text-amber-600' }
+    { name: 'Rent Collection', status: 'Active', badge: 'bg-slate-100 text-slate-600' }
   ];
 
   return (
@@ -22,7 +27,7 @@ export default function AutomationStatus() {
               <span className={`w-2 h-2 rounded-full ${item.status === 'Active' ? 'bg-emerald-500' : 'bg-amber-400'}`} />
               <span className="font-semibold text-slate-800">{item.name}</span>
             </div>
-            <span className={`px-2.5 py-0.5 rounded-full font-medium text-[11px] ${item.badge}`}>
+            <span className={`px-2.5 py-0.5 rounded-full font-medium text-[11px] ${item.badge || 'bg-slate-100 text-slate-600'}`}>
               {item.status}
             </span>
           </div>
