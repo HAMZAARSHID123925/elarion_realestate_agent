@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS tenants (
     tenant_name         TEXT NOT NULL,
     tenant_phone        TEXT NOT NULL,
     property_address    TEXT NOT NULL,
+    joining_date        TEXT DEFAULT NULL,
     rent_due_date       TEXT NOT NULL,
     last_payment_date   TEXT,
     rent_amount         REAL NOT NULL,
@@ -68,18 +69,25 @@ CREATE TABLE IF NOT EXISTS tenants (
 
 
 def init_rent_db(db_path: Optional[str] = None):
-    """Initializes the tenants table in the target database."""
+    """Initializes the tenants table in the database and ensures schema migrations."""
     target_path = get_db_path(db_path)
     if target_path:
         conn = sqlite3.connect(target_path)
         cursor = conn.cursor()
         cursor.execute(CREATE_TENANTS_TABLE_SQL)
+        
+        # Auto-migration: Check if joining_date column exists
+        cursor.execute("PRAGMA table_info(tenants);")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "joining_date" not in columns:
+            cursor.execute("ALTER TABLE tenants ADD COLUMN joining_date TEXT DEFAULT NULL;")
+            logger.info("Migrated tenants table: Added missing joining_date column.")
+
         conn.commit()
         conn.close()
         logger.info(f"Initialized local tenants table in {target_path}")
     else:
         logger.info("PostgreSQL database initialized via migrations (000_init_base_tables.sql)")
-
 
 def seed_sample_tenants(db_path: Optional[str] = None):
     """Seeds test tenant records for workflow verification."""
@@ -113,13 +121,36 @@ def seed_sample_tenants(db_path: Optional[str] = None):
             ),
         ]
 
+        sample_tenants = [
+            (
+                "T-101", "P-201", "Ali Ahmed", "0300-1112223", "Flat 4B, Gulberg Heights, Lahore",
+                "2026-07-01", "2026-07-31", None, 75000.0, "overdue", None, None, 0, 0, None, 0, "none"
+            ),
+            (
+                "T-102", "P-202", "Furqan Khan", "0321-4445556", "Villa 12, DHA Phase 5, Lahore",
+                "2026-07-11", "2026-08-10", None, 120000.0, "reminder_sent", "2026-08-01T08:00:00", None, 0, 0, None, 0, "reminder_sent"
+            ),
+            (
+                "T-103", "P-203", "Hamza Malik", "0333-7778889", "Apartment 302, F-10, Islamabad",
+                "2026-06-20", "2026-07-20", None, 95000.0, "followup_sent", "2026-07-20T08:00:00", "2026-07-26T08:00:00", 0, 0, None, 0, "followup_sent"
+            ),
+            (
+                "T-104", "P-204", "Usman Tariq", "0345-9990001", "House 88, Bahria Town, Karachi",
+                "2026-06-15", "2026-07-15", None, 110000.0, "overdue", None, None, 0, 0, None, 1, "none"
+            ),
+            (
+                "T-105", "P-205", "Sana Farooq", "0311-2223334", "Studio 15, Clifton, Karachi",
+                "2026-07-01", "2026-08-01", "2026-08-02", 50000.0, "paid", None, None, 0, 0, None, 0, "none"
+            ),
+        ]
+
         cursor.executemany("""
             INSERT INTO tenants (
                 tenant_id, property_id, tenant_name, tenant_phone, property_address,
-                rent_due_date, last_payment_date, rent_amount, payment_status,
+                joining_date, rent_due_date, last_payment_date, rent_amount, payment_status,
                 reminder_30_sent_at, reminder_5_sent_at, response_received,
                 human_escalated, escalation_reason, manual_hold, last_reminder_status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """, sample_tenants)
 
         conn.commit()
@@ -131,7 +162,7 @@ def seed_sample_tenants(db_path: Optional[str] = None):
 
 def get_unpaid_overdue_tenants(ref_date_str: Optional[str] = None, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Queries all tenant records where payment_status != 'paid' and rent_due_date < ref_date.
+    Queries all tenant records where payment_status != 'paid' and rent_due_date <= ref_date or rent is due/overdue.
     Uses canonical PostgreSQL TenantRepository, falling back to local SQLite when db_path is specified.
     """
     target_path = get_db_path(db_path)
@@ -140,7 +171,11 @@ def get_unpaid_overdue_tenants(ref_date_str: Optional[str] = None, db_path: Opti
         conn = sqlite3.connect(target_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        query = "SELECT * FROM tenants WHERE payment_status != 'paid' AND rent_due_date < ?;"
+        query = """
+            SELECT * FROM tenants
+            WHERE payment_status != 'paid'
+              AND (rent_due_date <= ? OR joining_date IS NOT NULL);
+        """
         cursor.execute(query, (ref_date_str or date.today().isoformat(),))
         rows = cursor.fetchall()
         conn.close()
