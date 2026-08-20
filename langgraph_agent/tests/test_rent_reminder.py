@@ -114,8 +114,8 @@ def test_payment_check_node_live_hydration():
     assert result["tenant_name"] == "Ali Ahmed"
     assert result["property_address"] == "Flat 4B, Gulberg Heights, Lahore"
     assert result["rent_amount"] == 75000.0
-    assert result["rent_due_date"] == "2026-07-06"
-    assert result["days_overdue"] == 30
+    assert result["rent_due_date"] == "2026-07-31"
+    assert result["days_overdue"] == 5
     assert "error" not in result or result["error"] is None
 
 
