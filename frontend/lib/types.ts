@@ -26,11 +26,18 @@ export interface RecentActivityItem {
   time_str: string;
 }
 
+export interface AutomationStatusItem {
+  name: string;
+  status: string;
+  badge?: string;
+}
+
 export interface OverviewDashboardData {
   stats: OverviewStats;
   needs_attention: NeedsAttentionItem[];
   agent_activity_today: AgentActivityTodayItem[];
   recent_activity?: RecentActivityItem[];
+  automation_status?: AutomationStatusItem[];
 }
 
 

@@ -20,24 +20,20 @@ router = APIRouter(prefix="/api/v1/pipeline", tags=["Master Pipeline"])
 )
 async def process_pipeline_message(payload: PipelineMessageRequest) -> PipelineMessageResponse:
     try:
-        result, _ = await invoke_pipeline(
+        from app.pipeline import handle_request
+        final_resp = await handle_request(
             channel=payload.channel,
             user_id=payload.user_id,
             raw_text=payload.text,
             channel_metadata=payload.channel_metadata or {}
         )
 
-        if "__interrupt__" in result:
-            final_resp = "I have submitted your request for review. I will notify you as soon as it's approved."
-        else:
-            final_resp = result.get("final_response") or "I'm sorry, something went wrong. Please try again."
-
         return PipelineMessageResponse(
             channel=payload.channel,
             user_id=payload.user_id,
             final_response=final_resp,
-            intent=result.get("intent"),
-            active_department=result.get("active_department")
+            intent="Processed",
+            active_department="orchestrator"
         )
     except Exception as e:
         logger.error(f"Error processing pipeline message: {e}")
@@ -45,3 +41,4 @@ async def process_pipeline_message(payload: PipelineMessageRequest) -> PipelineM
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Pipeline processing failed: {str(e)}"
         )
+

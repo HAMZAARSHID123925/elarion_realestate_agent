@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 .env
 **/.env
 __pycache__/
@@ -11,23 +10,24 @@ realestate-agent/
 venv/
 .venv/
 env/
-=======
-.env
-**/.env
-__pycache__/
-*.pyc
 
-# Python virtual environment folder -- name confirmed to match the actual
-# folder on disk (realestate-agent/, with a dash). Removed the duplicate
-# line that was here before (harmless, but redundant).
-realestate-agent/
+# Node / Next.js / Build Outputs
+node_modules/
+**/node_modules/
+node_modules/**
+**/node_modules/**
+.next/
+**/.next/
+.next/**
+**/.next/**
+out/
+build/
+dist/
 
 # Scratch DB / cache files that shouldn't be committed
 elarion.db
 *.pytest_cache/
 **/checkpoints.db
 
-# Temporary holding folder for files flagged as dead code during the
-# production readiness review -- delete this folder once confirmed unneeded.
+# Temporary holding folder for files flagged as dead code
 _DELETE_ME_leftover_files/
->>>>>>> main

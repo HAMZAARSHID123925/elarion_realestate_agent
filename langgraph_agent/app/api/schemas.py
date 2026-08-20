@@ -421,3 +421,85 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
+
+# ── Dashboard Transcripts & UI Aggregations ────────────────────────────────────
+
+class ConversationMessageSchema(BaseModel):
+    message_id: int
+    sender_type: str
+    sender_name: str
+    content: str
+    system_event: Optional[str] = None
+    timestamp: Any
+
+class ConversationSummarySchema(BaseModel):
+    conversation_id: str
+    tenant_id: Optional[str] = None
+    property_id: Optional[str] = None
+    property_name: Optional[str] = "Sunset Apartments"
+    unit_id: Optional[str] = None
+    unit_number: Optional[str] = "204"
+    contact_name: str
+    channel: str
+    intent: Optional[str] = "General Inquiry"
+    urgency: Optional[str] = "Normal"
+    status: str = "AI Resolved"
+    workflow_triggered: Optional[str] = "Resident Support"
+    human_intervention: Optional[str] = "None"
+    is_reviewed: bool = False
+    last_message_at: Any
+    created_at: Any
+
+class ConversationDetailSchema(ConversationSummarySchema):
+    messages: List[ConversationMessageSchema] = []
+
+class ConversationsListResponse(BaseModel):
+    total: int
+    items: List[ConversationSummarySchema]
+    limit: int
+    offset: int
+
+class NeedsAttentionItemSchema(BaseModel):
+    id: str
+    severity: str
+    title: str
+    workflow: str
+    action_label: str = "Review"
+
+class AgentActivityTodayItemSchema(BaseModel):
+    workflow: str
+    runs: int
+    rate: int
+
+class RecentActivityItemSchema(BaseModel):
+    agent: str
+    summary: str
+    time_str: str
+
+class AutomationStatusItemSchema(BaseModel):
+    name: str
+    status: str
+    badge: str
+
+class OverviewDashboardResponse(BaseModel):
+    stats: Dict[str, Any]
+    needs_attention: List[NeedsAttentionItemSchema]
+    agent_activity_today: List[AgentActivityTodayItemSchema]
+    recent_activity: List[RecentActivityItemSchema] = []
+    automation_status: List[AutomationStatusItemSchema] = []
+
+class AutomationCardSchema(BaseModel):
+    id: str
+    name: str
+    status: str
+    description: str
+    channels: List[str]
+    escalation_conditions: List[str]
+    scope: str
+
+class AgentActivityResponse(BaseModel):
+    metrics: Dict[str, Any]
+    workflow_performance: List[Dict[str, Any]]
+    recent_executions: List[Dict[str, Any]]
+
+
