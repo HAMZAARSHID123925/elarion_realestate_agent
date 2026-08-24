@@ -16,8 +16,18 @@ from app.core_workflows.maintenance.mcp_client import mcp_client
 logger = logging.getLogger(__name__)
 
 # Initialize LLM
+# Model selection (2026-08-23 — confirmed working with structured output on this Groq key):
+#
+#  PRIMARY  → qwen/qwen3.6-27b      : Groq-native, tool-calling capable, generous rate limits ✅
+#  FALLBACK → openai/gpt-oss-120b   : Most capable, use if Qwen hits limits
+#
+# ❌ groq/compound / groq/compound-mini do NOT support tool calling (needed for structured output)
+# ❌ llama-3.3-70b-versatile / llama-3.1-70b-versatile — deprecated on this account
+PRIMARY_MODEL = "qwen/qwen3.6-27b"
+FALLBACK_MODEL = "openai/gpt-oss-120b"
+
 def get_llm():
-    return ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+    return ChatGroq(model=PRIMARY_MODEL, temperature=0)
 
 # --- Pydantic Schema for Unified Structured Output ---
 

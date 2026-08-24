@@ -2,8 +2,9 @@
 
 import React, { useState } from 'react';
 import { NeedsAttentionItem } from '@/lib/types';
-import { AlertTriangle, CheckCircle2, Eye } from 'lucide-react';
+import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { getSeverityToken } from '@/lib/design-tokens';
 
 interface NeedsAttentionProps {
   items: NeedsAttentionItem[];
@@ -19,44 +20,13 @@ export default function NeedsAttention({ items: initialItems, onActionComplete }
     try {
       const action = actionLabel.includes('Approve') ? 'Approve' : 'Review';
       await apiClient.performEscalationAction(id, action);
-      // Remove item from actionable queue
       setItems((prev) => prev.filter((item) => item.id !== id));
       if (onActionComplete) onActionComplete();
     } catch (err) {
       console.error('Failed to perform escalation action:', err);
-      // Optimistic removal for testing UI responsiveness
       setItems((prev) => prev.filter((item) => item.id !== id));
     } finally {
       setLoadingId(null);
-    }
-  };
-
-  const getSeverityStyle = (severity: string) => {
-    switch (severity.toUpperCase()) {
-      case 'CRITICAL':
-        return {
-          cardBorder: 'border-red-400 bg-red-50/20',
-          badgeBg: 'bg-red-100 text-red-700 font-bold',
-          btnBg: 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300'
-        };
-      case 'ESCALATION':
-        return {
-          cardBorder: 'border-amber-400 bg-amber-50/20',
-          badgeBg: 'bg-amber-100 text-amber-800 font-bold',
-          btnBg: 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300'
-        };
-      case 'APPROVAL':
-        return {
-          cardBorder: 'border-blue-400 bg-blue-50/20',
-          badgeBg: 'bg-blue-100 text-blue-800 font-bold',
-          btnBg: 'bg-teal-700 hover:bg-teal-600 text-white border border-teal-700 shadow-sm'
-        };
-      default:
-        return {
-          cardBorder: 'border-slate-300 bg-slate-50/50',
-          badgeBg: 'bg-slate-100 text-slate-700',
-          btnBg: 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300'
-        };
     }
   };
 
@@ -75,7 +45,7 @@ export default function NeedsAttention({ items: initialItems, onActionComplete }
       ) : (
         <div className="space-y-3">
           {items.map((item) => {
-            const style = getSeverityStyle(item.severity);
+            const style = getSeverityToken(item.severity);
             const isLoading = loadingId === item.id;
             return (
               <div

@@ -60,6 +60,13 @@ export interface ConversationSummary {
   created_at: string;
 }
 
+export interface ConversationsListResponse {
+  total: number;
+  items: ConversationSummary[];
+  limit: number;
+  offset: number;
+}
+
 export interface ConversationMessage {
   message_id: number;
   sender_type: 'tenant' | 'ai' | 'system';

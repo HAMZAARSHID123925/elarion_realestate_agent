@@ -1,6 +1,7 @@
 import {
   OverviewDashboardData,
   ConversationSummary,
+  ConversationsListResponse,
   ConversationDetail,
   AutomationCard,
   AgentActivityData
@@ -41,9 +42,9 @@ export const apiClient = {
   },
 
   // Conversations List & Details
-  getConversations: async (params?: Record<string, string>): Promise<{ total: number; items: ConversationSummary[] }> => {
+  getConversations: async (params?: Record<string, string>): Promise<ConversationsListResponse> => {
     const query = new URLSearchParams(params || {}).toString();
-    return fetchJson<{ total: number; items: ConversationSummary[] }>(`/dashboard/conversations?${query}`);
+    return fetchJson<ConversationsListResponse>(`/dashboard/conversations?${query}`);
   },
 
   getConversationDetail: async (id: string): Promise<ConversationDetail> => {
