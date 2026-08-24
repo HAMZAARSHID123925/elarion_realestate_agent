@@ -6,6 +6,7 @@ Automations Grid, and Agent Activity.
 """
 import logging
 from typing import Optional, List, Dict, Any
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, Query, Security
 
 from app.api.schemas import (
@@ -76,7 +77,8 @@ async def list_conversations(
     intent: Optional[str] = Query(None, description="Filter by classified intent"),
     urgency: Optional[str] = Query(None, description="Filter by urgency level"),
     status: Optional[str] = Query(None, description="Filter by conversation status"),
-    limit: int = Query(50, ge=1, le=200),
+    date_from: Optional[datetime] = Query(None, description="Filter conversations on or after this ISO datetime"),
+    limit: int = Query(10, ge=1, le=200),
     offset: int = Query(0, ge=0),
     user: AuthenticatedUser = Security(require_auth)
 ) -> ConversationsListResponse:
@@ -89,6 +91,7 @@ async def list_conversations(
             intent=intent,
             urgency=urgency,
             status=status,
+            date_from=date_from,
             limit=limit,
             offset=offset
         )
@@ -208,3 +211,4 @@ async def get_agent_activity(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch agent activity: {str(e)}"
         )
+

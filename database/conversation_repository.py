@@ -40,7 +40,8 @@ class ConversationRepository:
         intent: Optional[str] = None,
         urgency: Optional[str] = None,
         status: Optional[str] = None,
-        limit: int = 50,
+        date_from: Optional[datetime] = None,
+        limit: int = 10,
         offset: int = 0
     ) -> Dict[str, Any]:
         """Fetches paginated conversations with optional filters."""
@@ -78,6 +79,10 @@ class ConversationRepository:
                 if status and status.lower() != "all statuses":
                     where_clauses.append("c.status ILIKE %s")
                     params.append(status)
+
+                if date_from:
+                    where_clauses.append("c.last_message_at >= %s")
+                    params.append(date_from)
 
                 where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
@@ -176,7 +181,10 @@ class ConversationRepository:
                 """, [conversation_id])
                 messages = await cur.fetchall()
 
-                return conv_dict
+                return {
+                    **dict(conv),
+                    "messages": [dict(m) for m in messages]
+                }
 
     async def record_turn_and_update_state(
         self,
@@ -242,16 +250,34 @@ class ConversationRepository:
                     severity = "CRITICAL" if is_emergency else "ESCALATION"
                     desc = f"{contact_name}: {tenant_text[:120]}"
 
-                    await cur.execute("""
-                        INSERT INTO human_escalations (
-                            lease_id, tenant_id, property_id, escalation_reason, escalation_priority, status, description, assigned_to
-                        ) VALUES (
-                            (SELECT lease_id FROM leases LIMIT 1),
-                            (SELECT tenant_id FROM tenants LIMIT 1),
-                            (SELECT property_id FROM properties LIMIT 1),
-                            %s, %s, 'OPEN', %s, 'Property Manager'
+                    # human_escalations has NOT NULL FKs (lease_id, tenant_id) --
+                    # fetch them explicitly first; if none exist skip the insert
+                    # instead of crashing the whole conversation save.
+                    await cur.execute("SELECT lease_id FROM leases LIMIT 1")
+                    lease_row = await cur.fetchone()
+                    await cur.execute("SELECT tenant_id FROM tenants LIMIT 1")
+                    tenant_row = await cur.fetchone()
+                    await cur.execute("SELECT property_id FROM properties LIMIT 1")
+                    prop_row = await cur.fetchone()
+
+                    if lease_row and tenant_row:
+                        await cur.execute("""
+                            INSERT INTO human_escalations (
+                                lease_id, tenant_id, property_id,
+                                escalation_reason, escalation_priority, status,
+                                description, assigned_to
+                            ) VALUES (%s, %s, %s, %s, %s, 'OPEN', %s, 'Property Manager')
+                        """, [
+                            lease_row["lease_id"],
+                            tenant_row["tenant_id"],
+                            prop_row["property_id"] if prop_row else None,
+                            escalation_reason, severity, desc
+                        ])
+                    else:
+                        logger.warning(
+                            "human_escalations INSERT skipped: no leases/tenants found in DB "
+                            f"(escalation_reason={escalation_reason}, contact={contact_name})"
                         )
-                    """, [escalation_reason, severity, desc])
 
 
                 await conn.commit()

@@ -36,13 +36,28 @@ _saver = None
 
 
 async def get_checkpointer():
-    """Lazily opens one shared AsyncPostgresSaver pool for the process lifetime."""
+    """Lazily opens one shared AsyncPostgresSaver pool for the process lifetime.
+
+    Neon PostgreSQL (serverless) drops idle SSL connections after ~5 minutes.
+    Production settings to survive that:
+      - min_size=0   : no connections kept warm; all created on demand
+      - max_idle=240 : cull idle connections after 4 min (before Neon's 5-min cut)
+      - reconnect_timeout=30 : give psycopg_pool 30 s to reconnect before raising
+    """
     global _pool, _saver
     if _saver is None:
         logger.info("Connecting persistent AsyncPostgresSaver to PostgreSQL...")
+
+        def _on_reconnect_failed(pool):
+            logger.error("AsyncPostgresSaver: all reconnect attempts to PostgreSQL failed — pool degraded.")
+
         _pool = AsyncConnectionPool(
             conninfo=DATABASE_URL,
+            min_size=0,          # never keep idle connections alive (Neon kills them)
             max_size=10,
+            max_idle=240,        # drop connections idle > 4 min before Neon's 5-min timeout
+            reconnect_timeout=30,
+            reconnect_failed=_on_reconnect_failed,
             kwargs={"autocommit": True},
             open=False
         )

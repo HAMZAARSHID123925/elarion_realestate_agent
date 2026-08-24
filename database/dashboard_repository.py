@@ -77,7 +77,7 @@ class DashboardRepository:
                 r_row = await cur.fetchone()
                 ai_resolved = r_row["count"] if r_row else 0
 
-                await cur.execute("SELECT COUNT(*) as count FROM human_escalations WHERE status != 'RESOLVED' AND status != 'CLOSED';")
+                await cur.execute("SELECT COUNT(*) as count FROM human_escalations WHERE status = 'OPEN';")
                 e_row = await cur.fetchone()
                 human_escalations = e_row["count"] if e_row else 0
 
@@ -152,7 +152,7 @@ class DashboardRepository:
                     SELECT 
                         sender_name as agent,
                         content as summary,
-                        TO_CHAR(timestamp, 'HH12:MI AM') as time_str
+                        TO_CHAR(timestamp AT TIME ZONE 'Asia/Karachi', 'HH12:MI AM') as time_str
                     FROM conversation_messages
                     WHERE sender_type = 'ai'
                     ORDER BY timestamp DESC
