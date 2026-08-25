@@ -210,3 +210,89 @@ export const BRAND = {
   cardBg: '#FFFFFF',
   border: '#E2E8F0',
 } as const;
+
+
+// ── Automation Type Tokens ────────────────────────────────────────────────────
+export type AutomationIconType =
+  | 'maintenance'
+  | 'rent'
+  | 'support'
+  | 'lease'
+  | 'reporting'
+  | string;
+
+export const AUTOMATION_TOKENS: Record<string, {
+  cardAccent: string;       // top border color class
+  iconBg: string;           // icon wrapper background
+  iconColor: string;        // icon fill color
+  badgeBg: string;          // active badge bg
+  badgeText: string;        // active badge text
+  stepColor: string;        // timeline step accent color
+  aiTaskBg: string;         // "AI TASK" pill bg
+  aiTaskText: string;       // "AI TASK" pill text
+}> = {
+  maintenance: {
+    cardAccent: 'border-t-teal-500',
+    iconBg: 'bg-teal-50',
+    iconColor: 'text-teal-600',
+    badgeBg: 'bg-emerald-100',
+    badgeText: 'text-emerald-700',
+    stepColor: 'text-teal-600',
+    aiTaskBg: 'bg-emerald-100',
+    aiTaskText: 'text-emerald-700',
+  },
+  rent: {
+    cardAccent: 'border-t-amber-500',
+    iconBg: 'bg-amber-50',
+    iconColor: 'text-amber-600',
+    badgeBg: 'bg-emerald-100',
+    badgeText: 'text-emerald-700',
+    stepColor: 'text-amber-600',
+    aiTaskBg: 'bg-amber-100',
+    aiTaskText: 'text-amber-700',
+  },
+  support: {
+    cardAccent: 'border-t-blue-500',
+    iconBg: 'bg-blue-50',
+    iconColor: 'text-blue-600',
+    badgeBg: 'bg-emerald-100',
+    badgeText: 'text-emerald-700',
+    stepColor: 'text-blue-600',
+    aiTaskBg: 'bg-blue-100',
+    aiTaskText: 'text-blue-700',
+  },
+  lease: {
+    cardAccent: 'border-t-violet-500',
+    iconBg: 'bg-violet-50',
+    iconColor: 'text-violet-600',
+    badgeBg: 'bg-emerald-100',
+    badgeText: 'text-emerald-700',
+    stepColor: 'text-violet-600',
+    aiTaskBg: 'bg-violet-100',
+    aiTaskText: 'text-violet-700',
+  },
+  reporting: {
+    cardAccent: 'border-t-rose-500',
+    iconBg: 'bg-rose-50',
+    iconColor: 'text-rose-600',
+    badgeBg: 'bg-emerald-100',
+    badgeText: 'text-emerald-700',
+    stepColor: 'text-rose-600',
+    aiTaskBg: 'bg-rose-100',
+    aiTaskText: 'text-rose-700',
+  },
+  _default: {
+    cardAccent: 'border-t-slate-400',
+    iconBg: 'bg-slate-50',
+    iconColor: 'text-slate-600',
+    badgeBg: 'bg-emerald-100',
+    badgeText: 'text-emerald-700',
+    stepColor: 'text-slate-500',
+    aiTaskBg: 'bg-slate-100',
+    aiTaskText: 'text-slate-600',
+  },
+};
+
+export function getAutomationToken(iconType: AutomationIconType) {
+  return AUTOMATION_TOKENS[iconType] ?? AUTOMATION_TOKENS['_default'];
+}

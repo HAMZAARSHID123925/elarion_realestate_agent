@@ -491,11 +491,43 @@ class OverviewDashboardResponse(BaseModel):
 class AutomationCardSchema(BaseModel):
     id: str
     name: str
-    status: str
+    status: str                       # "Active" | "Inactive"
     description: str
+    handles: List[str] = []           # Short action labels displayed in card body
     channels: List[str]
     escalation_conditions: List[str]
     scope: str
+    properties_count: Optional[int] = None
+    icon_type: Optional[str] = None   # "maintenance" | "rent" | "support" | "lease" | "reporting"
+    steps: Optional[List[Dict[str, Any]]] = None
+
+
+class AutomationUpdateRequest(BaseModel):
+    """Request body for PATCH /dashboard/automations/{id}."""
+    active: Optional[bool] = None
+    status: Optional[str] = None       # "Active" | "Inactive"
+    name: Optional[str] = None
+    description: Optional[str] = None
+    escalation_conditions: Optional[List[str]] = None
+    channels: Optional[List[str]] = None
+    scope: Optional[str] = None
+    steps: Optional[List[Dict[str, Any]]] = None
+
+
+class AutomationCreateRequest(BaseModel):
+    """Request body for POST /dashboard/automations."""
+    id: Optional[str] = None
+    name: str
+    status: Optional[str] = "Active"
+    description: Optional[str] = None
+    tagline: Optional[str] = None
+    handles: Optional[List[str]] = []
+    channels: Optional[List[str]] = ["Email", "WhatsApp"]
+    escalation_conditions: Optional[List[str]] = []
+    scope: Optional[str] = "All Properties (42)"
+    properties_count: Optional[int] = 42
+    icon_type: Optional[str] = "maintenance"
+    steps: Optional[List[Dict[str, Any]]] = None
 
 class AgentActivityResponse(BaseModel):
     metrics: Dict[str, Any]

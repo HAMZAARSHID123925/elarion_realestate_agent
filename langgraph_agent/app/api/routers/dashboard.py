@@ -15,11 +15,14 @@ from app.api.schemas import (
     ConversationsListResponse,
     ConversationDetailSchema,
     AutomationCardSchema,
+    AutomationUpdateRequest,
+    AutomationCreateRequest,
     AgentActivityResponse
 )
 from app.api.auth import require_auth, AuthenticatedUser
 from database.dashboard_repository import dashboard_repository
 from database.conversation_repository import conversation_repository
+from database.automation_repository import automation_repository
 
 logger = logging.getLogger(__name__)
 
@@ -176,21 +179,151 @@ async def list_automations(
         )
 
 
+@router.get(
+    "/automations/{automation_id}",
+    response_model=AutomationCardSchema,
+    summary="Get Automation Configuration Details"
+)
+async def get_automation_detail(
+    automation_id: str,
+    user: AuthenticatedUser = Security(require_auth)
+) -> AutomationCardSchema:
+    try:
+        auto = await automation_repository.get_automation_by_id(automation_id)
+        if not auto:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Automation '{automation_id}' not found."
+            )
+        return AutomationCardSchema(**auto)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching automation '{automation_id}': {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch automation detail: {str(e)}"
+        )
+
+
 @router.patch(
     "/automations/{automation_id}",
-    summary="Toggle Automation Active Status"
+    summary="Update Automation Configuration (Persisted to PostgreSQL & Audit Logged)"
 )
-async def update_automation_status(
+async def update_automation(
     automation_id: str,
-    active: bool = Query(..., description="Active status toggle"),
+    payload: AutomationUpdateRequest,
     user: AuthenticatedUser = Security(require_auth)
 ) -> Dict[str, Any]:
-    return {
-        "status": "success",
-        "automation_id": automation_id,
-        "active": active,
-        "message": f"Automation '{automation_id}' updated to active={active}."
-    }
+    """
+    Accepts a JSON body with optional fields:
+      - active (bool): toggle automation on/off ('Active' / 'Inactive')
+      - escalation_conditions (List[str]): updated escalation rules text
+      - channels (List[str]): updated channels list
+      - name (str), description (str), scope (str)
+
+    Persists directly to PostgreSQL database and creates an audit log record.
+    """
+    try:
+        updates = payload.dict(exclude_unset=True)
+        if not updates:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No update fields provided."
+            )
+
+        actor_name = getattr(user, "key_identifier", "property_manager") or "property_manager"
+        updated_record = await automation_repository.update_automation(
+            automation_id=automation_id,
+            updates=updates,
+            actor=actor_name
+        )
+
+        if not updated_record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Automation '{automation_id}' not found."
+            )
+
+        return {
+            "status": "success",
+            "automation_id": automation_id,
+            "data": updated_record,
+            "message": f"Automation '{automation_id}' updated and persisted to PostgreSQL database successfully."
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating automation '{automation_id}': {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update automation: {str(e)}"
+        )
+
+
+@router.post(
+    "/automations",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a New Automation Configuration (Persisted to PostgreSQL & Audit Logged)"
+)
+async def create_automation(
+    payload: AutomationCreateRequest,
+    user: AuthenticatedUser = Security(require_auth)
+) -> Dict[str, Any]:
+    try:
+        data = payload.dict(exclude_unset=True)
+        actor_name = getattr(user, "key_identifier", "property_manager") or "property_manager"
+        created_record = await automation_repository.create_automation(
+            data=data,
+            actor=actor_name
+        )
+        return {
+            "status": "success",
+            "automation_id": created_record["id"],
+            "data": created_record,
+            "message": f"Automation '{created_record['name']}' created and persisted to PostgreSQL database successfully."
+        }
+    except Exception as e:
+        logger.error(f"Error creating automation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create automation: {str(e)}"
+        )
+
+
+@router.delete(
+    "/automations/{automation_id}",
+    summary="Delete Automation Configuration (Persisted to PostgreSQL & Audit Logged)"
+)
+async def delete_automation(
+    automation_id: str,
+    user: AuthenticatedUser = Security(require_auth)
+) -> Dict[str, Any]:
+    try:
+        actor_name = getattr(user, "key_identifier", "property_manager") or "property_manager"
+        deleted = await automation_repository.delete_automation(
+            automation_id=automation_id,
+            actor=actor_name
+        )
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Automation '{automation_id}' not found or could not be deleted."
+            )
+        return {
+            "status": "success",
+            "automation_id": automation_id,
+            "message": f"Automation '{automation_id}' deleted and removed from PostgreSQL database successfully."
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting automation '{automation_id}': {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete automation: {str(e)}"
+        )
 
 
 @router.get(

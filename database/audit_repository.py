@@ -78,8 +78,8 @@ class AuditRepository:
         if db_url:
             try:
                 conn = await asyncio.wait_for(
-                    psycopg.AsyncConnection.connect(db_url),
-                    timeout=1.0
+                    psycopg.AsyncConnection.connect(db_url, connect_timeout=2),
+                    timeout=2.0
                 )
                 async with conn:
                     async with conn.cursor(row_factory=dict_row) as cur:
@@ -116,7 +116,7 @@ class AuditRepository:
             try:
                 conn = await asyncio.wait_for(
                     psycopg.AsyncConnection.connect(db_url),
-                    timeout=1.0
+                    timeout=5.0
                 )
                 async with conn:
                     async with conn.cursor(row_factory=dict_row) as cur:

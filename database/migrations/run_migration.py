@@ -19,6 +19,11 @@ from dotenv import load_dotenv
 # Ensure project root is on path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+for env_path in [os.path.join(root_dir, ".env"), os.path.join(root_dir, "langgraph_agent", ".env")]:
+    if os.path.exists(env_path):
+        load_dotenv(env_path)
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -51,9 +56,9 @@ async def run_migrations():
                 async with conn.cursor() as cur:
                     await cur.execute(sql_content)
                 await conn.commit()
-                print(f"  ✓ {filename} applied successfully")
+                print(f"  [OK] {filename} applied successfully")
             except Exception as e:
-                print(f"  ✗ {filename} failed: {e}")
+                print(f"  [FAIL] {filename} failed: {e}")
                 await conn.rollback()
                 raise
 
