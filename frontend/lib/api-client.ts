@@ -4,6 +4,7 @@ import {
   ConversationsListResponse,
   ConversationDetail,
   AutomationCard,
+  AutomationUpdatePayload,
   AgentActivityData
 } from './types';
 
@@ -62,9 +63,27 @@ export const apiClient = {
     return fetchJson<AutomationCard[]>('/dashboard/automations');
   },
 
-  toggleAutomation: async (id: string, active: boolean): Promise<{ status: string; active: boolean }> => {
-    return fetchJson<{ status: string; active: boolean }>(`/dashboard/automations/${id}?active=${active}`, {
-      method: 'PATCH'
+  getAutomationDetail: async (id: string): Promise<AutomationCard> => {
+    return fetchJson<AutomationCard>(`/dashboard/automations/${id}`);
+  },
+
+  updateAutomation: async (id: string, payload: AutomationUpdatePayload): Promise<{ status: string; automation_id: string; data?: AutomationCard }> => {
+    return fetchJson<{ status: string; automation_id: string; data?: AutomationCard }>(`/dashboard/automations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  createAutomation: async (payload: Partial<AutomationCard>): Promise<{ status: string; automation_id: string; data?: AutomationCard }> => {
+    return fetchJson<{ status: string; automation_id: string; data?: AutomationCard }>('/dashboard/automations', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  deleteAutomation: async (id: string): Promise<{ status: string; automation_id: string }> => {
+    return fetchJson<{ status: string; automation_id: string }>(`/dashboard/automations/${id}`, {
+      method: 'DELETE'
     });
   },
 

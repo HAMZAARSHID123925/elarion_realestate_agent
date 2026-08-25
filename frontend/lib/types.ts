@@ -83,11 +83,26 @@ export interface ConversationDetail extends ConversationSummary {
 export interface AutomationCard {
   id: string;
   name: string;
-  status: string;
+  status: string;                   // "Active" | "Inactive"
   description: string;
-  channels: string[];
-  escalation_conditions: string[];
-  scope: string;
+  handles: string[];                 // Short handle labels for the card body
+  channels: string[];                // ["WhatsApp", "Email", "Voice", "Web"]
+  escalation_conditions: string[];   // Bullet list in the amber box
+  scope: string;                     // "All Properties (42)" | "3 Properties"
+  properties_count?: number;
+  icon_type?: string;                // "maintenance" | "rent" | "support" | "lease" | "reporting"
+  steps?: any[];
+}
+
+export interface AutomationUpdatePayload {
+  active?: boolean;
+  status?: string;
+  name?: string;
+  description?: string;
+  escalation_conditions?: string[];
+  channels?: string[];
+  scope?: string;
+  steps?: any[];
 }
 
 export interface AgentActivityData {

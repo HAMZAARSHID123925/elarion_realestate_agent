@@ -61,9 +61,9 @@ async def run_migrations():
                 async with conn.cursor() as cur:
                     await cur.execute(sql_content)
                 await conn.commit()
-                print(f"  ✓ {filename} applied successfully")
+                print(f"  [OK] {filename} applied successfully")
             except Exception as e:
-                print(f"  ✗ {filename} failed: {e}")
+                print(f"  [FAIL] {filename} failed: {e}")
                 await conn.rollback()
                 raise
 

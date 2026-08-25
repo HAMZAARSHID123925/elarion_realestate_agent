@@ -171,54 +171,9 @@ class DashboardRepository:
 
 
     async def get_automations_list(self) -> List[Dict[str, Any]]:
-        """Returns workflow rules list for Automations Grid matching input_file_3.png."""
-        return [
-            {
-                "id": "auto-1",
-                "name": "Maintenance Request",
-                "status": "Active",
-                "description": "Handles: Collect details, classify urgency, ticket creation, vendor assignment.",
-                "channels": ["WhatsApp", "Email", "Voice", "Web"],
-                "escalation_conditions": ["Emergency detected (e.g., flood)", "AI confidence < 85%"],
-                "scope": "All Properties (42)"
-            },
-            {
-                "id": "auto-2",
-                "name": "Rent Reminder",
-                "status": "Active",
-                "description": "Handles: Automated follow-ups, payment link generation, late fee calculation.",
-                "channels": ["WhatsApp", "Email", "SMS"],
-                "escalation_conditions": ["> 15 days past due", "Tenant dispute initiated"],
-                "scope": "3 Properties"
-            },
-            {
-                "id": "auto-3",
-                "name": "Resident Support",
-                "status": "Active",
-                "description": "Handles: General FAQ, community rules, amenity booking assistance.",
-                "channels": ["WhatsApp", "Web"],
-                "escalation_conditions": ["Complex policy questions", "Frustration sentiment detected"],
-                "scope": "All Properties (42)"
-            },
-            {
-                "id": "auto-4",
-                "name": "Lease Renewal",
-                "status": "Active",
-                "description": "Handles: Document collection, signature chasing, pre-renewal intent checks.",
-                "channels": ["Email", "WhatsApp"],
-                "escalation_conditions": ["Tenant requested human negotiation", "Custom clause modification"],
-                "scope": "All Properties (42)"
-            },
-            {
-                "id": "auto-5",
-                "name": "Owner Reporting",
-                "status": "Active",
-                "description": "Handles: Automated monthly portfolio generation, variance explanations.",
-                "channels": ["Email"],
-                "escalation_conditions": ["Variance > 15%", "Unreconciled bank statement"],
-                "scope": "12 Properties"
-            }
-        ]
+        """Returns workflow rules list for Automations Grid from PostgreSQL database."""
+        from database.automation_repository import automation_repository
+        return await automation_repository.list_automations()
 
     async def get_agent_activity_metrics(self, period: str = "today") -> Dict[str, Any]:
         """Returns metrics and execution feeds matching input_file_4.png."""
