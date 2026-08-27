@@ -73,5 +73,6 @@ class RentRenewalState(TypedDict, total=False):
     # Operational and Conversational State
     workflow_error: Optional[str]
     messages: List[Dict[str, Any]]
+    final_response: Optional[str]
     is_complete: bool
     logs: List[str]

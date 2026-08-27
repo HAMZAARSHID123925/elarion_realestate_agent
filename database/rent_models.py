@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS tenants (
     tenant_name         TEXT NOT NULL,
     tenant_phone        TEXT NOT NULL,
     property_address    TEXT NOT NULL,
+    joining_date        TEXT DEFAULT NULL,  -- YYYY-MM-DD
     rent_due_date       TEXT NOT NULL,  -- YYYY-MM-DD
     last_payment_date   TEXT,           -- YYYY-MM-DD
     rent_amount         REAL NOT NULL,
@@ -40,11 +41,19 @@ CREATE TABLE IF NOT EXISTS tenants (
 """
 
 def init_rent_db(db_path: Optional[str] = None):
-    """Initializes the tenants table in the database."""
+    """Initializes the tenants table in the database and ensures schema migrations."""
     target_path = get_db_path(db_path)
     conn = sqlite3.connect(target_path)
     cursor = conn.cursor()
     cursor.execute(CREATE_TENANTS_TABLE_SQL)
+    
+    # Auto-migration: Check if joining_date column exists
+    cursor.execute("PRAGMA table_info(tenants);")
+    columns = [row[1] for row in cursor.fetchall()]
+    if "joining_date" not in columns:
+        cursor.execute("ALTER TABLE tenants ADD COLUMN joining_date TEXT DEFAULT NULL;")
+        logger.info("Migrated tenants table: Added missing joining_date column.")
+
     conn.commit()
     conn.close()
     logger.info(f"Initialized tenants table in {target_path}")
@@ -60,40 +69,41 @@ def seed_sample_tenants(db_path: Optional[str] = None):
     cursor.execute("DELETE FROM tenants;")
 
     sample_tenants = [
-        # Candidate 1: Overdue 30 days, no reminder sent yet -> Should get Reminder #1
+        # Candidate 1: Ali Ahmed - Joined 2026-07-01 (Day 1). Billing cycle 30th day = 2026-07-30. Overdue on 2026-08-05 -> Should get 30-Day Reminder #1
         (
             "T-101", "P-201", "Ali Ahmed", "0300-1112223", "Flat 4B, Gulberg Heights, Lahore",
-            "2026-07-06", None, 75000.0, "overdue", None, None, 0, 0, None, 0, "none"
+            "2026-07-01", "2026-07-31", None, 75000.0, "overdue", None, None, 0, 0, None, 0, "none"
         ),
-        # Candidate 2: Reminder #1 sent 5 days ago, still unpaid -> Should get Reminder #2
+        # Candidate 2: Furqan Khan - Joined 2026-07-11 (Day 11). Billing cycle 30th day = 2026-08-10.
+        # Reminder #1 sent on 2026-08-01, current date 2026-08-05 (Days 31-35 window) -> Should get Followup (31-35 Days Unpaid Warning)
         (
-            "T-102", "P-202", "Zainab Bibi", "0321-4445556", "Villa 12, DHA Phase 5, Lahore",
-            "2026-06-25", None, 120000.0, "reminder_sent", "2026-07-31T08:00:00", None, 0, 0, None, 0, "reminder_sent"
+            "T-102", "P-202", "Furqan Khan", "0321-4445556", "Villa 12, DHA Phase 5, Lahore",
+            "2026-07-11", "2026-08-10", None, 120000.0, "reminder_sent", "2026-08-01T08:00:00", None, 0, 0, None, 0, "reminder_sent"
         ),
-        # Candidate 3: Reminder #2 sent 2 days ago, no payment & no response -> Should ESCALATE to human
+        # Candidate 3: Hamza Malik - Joined 2026-06-20. Current date 2026-08-05 (Day 36+ unpaid past Day 35) -> Should ESCALATE to human
         (
             "T-103", "P-203", "Hamza Malik", "0333-7778889", "Apartment 302, F-10, Islamabad",
-            "2026-06-20", None, 95000.0, "followup_sent", "2026-07-25T08:00:00", "2026-08-03T08:00:00", 0, 0, None, 0, "followup_sent"
+            "2026-06-20", "2026-07-20", None, 95000.0, "followup_sent", "2026-07-20T08:00:00", "2026-07-26T08:00:00", 0, 0, None, 0, "followup_sent"
         ),
-        # Candidate 4: Manual hold active -> Should SKIP
+        # Candidate 4: Usman Tariq - Manual hold active -> Should SKIP
         (
             "T-104", "P-204", "Usman Tariq", "0345-9990001", "House 88, Bahria Town, Karachi",
-            "2026-06-15", None, 110000.0, "overdue", None, None, 0, 0, None, 1, "none"
+            "2026-06-15", "2026-07-15", None, 110000.0, "overdue", None, None, 0, 0, None, 1, "none"
         ),
-        # Candidate 5: Paid tenant -> Should SKIP
+        # Candidate 5: Sana Farooq - Paid tenant -> Should SKIP
         (
             "T-105", "P-205", "Sana Farooq", "0311-2223334", "Studio 15, Clifton, Karachi",
-            "2026-07-01", "2026-07-02", 50000.0, "paid", None, None, 0, 0, None, 0, "none"
+            "2026-07-01", "2026-08-01", "2026-08-02", 50000.0, "paid", None, None, 0, 0, None, 0, "none"
         ),
     ]
 
     cursor.executemany("""
         INSERT INTO tenants (
             tenant_id, property_id, tenant_name, tenant_phone, property_address,
-            rent_due_date, last_payment_date, rent_amount, payment_status,
+            joining_date, rent_due_date, last_payment_date, rent_amount, payment_status,
             reminder_30_sent_at, reminder_5_sent_at, response_received,
             human_escalated, escalation_reason, manual_hold, last_reminder_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     """, sample_tenants)
 
     conn.commit()
@@ -102,7 +112,7 @@ def seed_sample_tenants(db_path: Optional[str] = None):
 
 def get_unpaid_overdue_tenants(ref_date_str: str, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Queries all tenant records where payment_status != 'paid' and rent_due_date < ref_date.
+    Queries all tenant records where payment_status != 'paid' and rent_due_date <= ref_date or rent is due/overdue.
     """
     target_path = get_db_path(db_path)
     init_rent_db(target_path)
@@ -113,7 +123,7 @@ def get_unpaid_overdue_tenants(ref_date_str: str, db_path: Optional[str] = None)
     query = """
         SELECT * FROM tenants
         WHERE payment_status != 'paid'
-          AND rent_due_date < ?;
+          AND (rent_due_date <= ? OR joining_date IS NOT NULL);
     """
     cursor.execute(query, (ref_date_str,))
     rows = cursor.fetchall()
