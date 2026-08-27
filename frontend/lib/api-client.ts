@@ -5,7 +5,10 @@ import {
   ConversationDetail,
   AutomationCard,
   AutomationUpdatePayload,
-  AgentActivityData
+  AgentActivityData,
+  PropertyDashboardResponse,
+  PropertyDashboardCard,
+  PropertyCreatePayload
 } from './types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
@@ -90,5 +93,42 @@ export const apiClient = {
   // Agent Activity & Analytics
   getAgentActivity: async (period = 'today'): Promise<AgentActivityData> => {
     return fetchJson<AgentActivityData>(`/dashboard/agent-activity?period=${period}`);
+  },
+
+  // ── Properties Dashboard (100% Real PostgreSQL) ────────────────────────────
+
+  /** Fetches property cards with live conversation stats from PostgreSQL */
+  getPropertyDashboardCards: async (params?: Record<string, string>): Promise<PropertyDashboardResponse> => {
+    const query = new URLSearchParams(params || {}).toString();
+    return fetchJson<PropertyDashboardResponse>(`/properties/dashboard?${query}`);
+  },
+
+  /** Creates a new property record — persisted directly to PostgreSQL */
+  createProperty: async (data: PropertyCreatePayload): Promise<PropertyDashboardCard> => {
+    return fetchJson<PropertyDashboardCard>('/properties', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  },
+
+  /** Deletes a property from PostgreSQL permanently */
+  deleteProperty: async (id: string): Promise<{ status: string; property_id: string }> => {
+    return fetchJson<{ status: string; property_id: string }>(`/properties/${id}`, {
+      method: 'DELETE'
+    });
+  },
+
+  /** Toggles property Active/Inactive — persisted to PostgreSQL */
+  togglePropertyStatus: async (id: string, newStatus: string): Promise<PropertyDashboardCard> => {
+    return fetchJson<PropertyDashboardCard>(`/properties/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: newStatus })
+    });
+  },
+
+  /** Returns distinct cities for filter dropdowns */
+  getCities: async (): Promise<string[]> => {
+    return fetchJson<string[]>('/properties/cities');
   }
 };
+

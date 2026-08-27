@@ -77,6 +77,8 @@ class PropertyResponse(BaseModel):
     city: Optional[str] = None
     property_type: Optional[str] = None
     price_lakhs: float = 0.0
+    status: Optional[str] = "Active"
+    units_count: Optional[int] = 0
     created_at: Optional[Any] = None
 
 
@@ -89,6 +91,29 @@ class UnitResponse(BaseModel):
 
 class PropertyDetailResponse(PropertyResponse):
     units: List[UnitResponse] = []
+
+
+class PropertyDashboardCard(BaseModel):
+    """Property card with real-time conversation stats from PostgreSQL."""
+    property_id: str
+    title: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    property_type: Optional[str] = None
+    price_lakhs: float = 0.0
+    status: str = "Active"
+    units_count: int = 0
+    conversations_count: int = 0
+    maintenance_count: int = 0
+    escalations_count: int = 0
+    active_automations: List[str] = []
+    created_at: Optional[Any] = None
+
+
+class PropertyDashboardResponse(BaseModel):
+    """Response envelope for property dashboard cards."""
+    total: int
+    items: List[PropertyDashboardCard]
 
 
 # ── Maintenance Tickets ───────────────────────────────────────────────────────
@@ -260,6 +285,8 @@ class PropertyCreateRequest(BaseModel):
     city: Optional[str] = None
     property_type: Optional[str] = None
     price_lakhs: float = 0.0
+    status: Optional[str] = "Active"
+    units_count: Optional[int] = 0
 
 
 class PropertyUpdateRequest(BaseModel):
@@ -268,6 +295,8 @@ class PropertyUpdateRequest(BaseModel):
     city: Optional[str] = None
     property_type: Optional[str] = None
     price_lakhs: Optional[float] = None
+    status: Optional[str] = None
+    units_count: Optional[int] = None
 
 
 class TenantCreateRequest(BaseModel):

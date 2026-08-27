@@ -131,3 +131,45 @@ export interface AgentActivityData {
     timestamp: string;
   }>;
 }
+
+
+// ── Properties Dashboard ─────────────────────────────────────────────────────
+
+export interface PropertyDashboardCard {
+  property_id: string;
+  title: string | null;
+  address: string | null;
+  city: string | null;
+  property_type: string | null;
+  price_lakhs: number;
+  status: 'Active' | 'Inactive' | string;
+  units_count: number;
+  conversations_count: number;
+  maintenance_count: number;
+  escalations_count: number;
+  active_automations: string[];
+  created_at: string | null;
+}
+
+export interface PropertyDashboardResponse {
+  total: number;
+  items: PropertyDashboardCard[];
+}
+
+export interface PropertyFilters {
+  search: string;
+  status: string;
+  property_type: string;
+  city: string;
+}
+
+export interface PropertyCreatePayload {
+  title: string;
+  address: string;
+  city: string;
+  property_type: string;
+  price_lakhs: number;
+  status: string;
+  units_count: number;
+}
+
