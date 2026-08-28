@@ -18,6 +18,7 @@ write state in a single return value. No LLM call here -- same "deterministic,
 auditable routing" principle rules_engine_node already follows.
 """
 import logging
+from datetime import date
 from typing import Literal, Dict, Any
 
 from langchain_core.messages import HumanMessage
@@ -201,12 +202,54 @@ async def run_rent_reminder(state: PipelineState, config: RunnableConfig) -> Dic
         "tenant_id": request.user_id,
         "current_date": date.today().isoformat(),
     }
-    result = await sub_graph.ainvoke(sub_input, config)
+    sub_config = dict(config or {})
+    if "configurable" not in sub_config or not sub_config.get("configurable", {}).get("thread_id"):
+        sub_config["configurable"] = {
+            **sub_config.get("configurable", {}),
+            "thread_id": f"rent_reminder_{request.user_id}",
+        }
+    result = await sub_graph.ainvoke(sub_input, sub_config)
+
+    # Formulate dynamic data-driven response based on live workflow result
+    if result.get("error") == "tenant_not_found":
+        final_response = f"Thank you for reaching out. We could not find a tenant record matching ID '{request.user_id}'. Please contact property management."
+    elif result.get("payment_status") == "paid":
+        t_name = result.get("tenant_name") or "Valued Tenant"
+        p_addr = result.get("property_address") or "your property"
+        final_response = f"Hello {t_name}, our records confirm that rent for {p_addr} is fully paid. Thank you!"
+    elif result.get("action") == "SEND_REMINDER" or result.get("last_reminder_status") == "reminder_sent":
+        t_name = result.get("tenant_name") or "Tenant"
+        p_addr = result.get("property_address") or "your property"
+        amt = result.get("rent_amount", 0.0)
+        due = result.get("rent_due_date", "recent due date")
+        days = result.get("days_overdue", 0)
+        final_response = (
+            f"Dear {t_name}, your rent payment of PKR {amt:,.2f} for {p_addr} was due on {due} "
+            f"({days} days overdue). Please arrange payment at your earliest convenience."
+        )
+    elif result.get("action") == "SEND_FOLLOWUP" or result.get("last_reminder_status") == "followup_sent":
+        t_name = result.get("tenant_name") or "Tenant"
+        p_addr = result.get("property_address") or "your property"
+        amt = result.get("rent_amount", 0.0)
+        final_response = (
+            f"URGENT: Dear {t_name}, your rent payment of PKR {amt:,.2f} for {p_addr} remains outstanding. "
+            f"Please arrange payment or provide a response within 48 hours."
+        )
+    elif result.get("action") == "ESCALATE" or result.get("human_escalated"):
+        final_response = (
+            "Your overdue rent account has been referred to senior property management. "
+            "A representative will contact you directly to discuss resolution options."
+        )
+    else:
+        t_name = result.get("tenant_name") or "Valued Tenant"
+        p_addr = result.get("property_address") or "your unit"
+        status = result.get("payment_status") or "up-to-date"
+        final_response = f"Hello {t_name}, your account status for {p_addr} is currently '{status}'."
 
     return {
         "active_department": None,
         "department_result": result,
-        "final_response": "Your rent reminder inquiry has been processed.",
+        "final_response": final_response,
     }
 
 

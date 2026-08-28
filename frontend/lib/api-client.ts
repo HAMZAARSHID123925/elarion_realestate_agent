@@ -1,0 +1,134 @@
+import {
+  OverviewDashboardData,
+  ConversationSummary,
+  ConversationsListResponse,
+  ConversationDetail,
+  AutomationCard,
+  AutomationUpdatePayload,
+  AgentActivityData,
+  PropertyDashboardResponse,
+  PropertyDashboardCard,
+  PropertyCreatePayload
+} from './types';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
+
+async function fetchJson<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const url = `${API_BASE_URL}${endpoint}`;
+  const response = await fetch(url, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options?.headers || {})
+    },
+    ...options
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`API Error [${response.status}]: ${errorText || response.statusText}`);
+  }
+
+  return response.json();
+}
+
+export const apiClient = {
+  // Overview Dashboard
+  getOverviewData: async (): Promise<OverviewDashboardData> => {
+    return fetchJson<OverviewDashboardData>('/dashboard/overview');
+  },
+
+  // Manager Actions (Approve / Review)
+  performEscalationAction: async (id: string, action: 'Approve' | 'Review' | 'Resolve'): Promise<{ status: string }> => {
+    return fetchJson<{ status: string }>(`/human-escalations/${id}/action`, {
+      method: 'POST',
+      body: JSON.stringify({ action })
+    });
+  },
+
+  // Conversations List & Details
+  getConversations: async (params?: Record<string, string>): Promise<ConversationsListResponse> => {
+    const query = new URLSearchParams(params || {}).toString();
+    return fetchJson<ConversationsListResponse>(`/dashboard/conversations?${query}`);
+  },
+
+  getConversationDetail: async (id: string): Promise<ConversationDetail> => {
+    return fetchJson<ConversationDetail>(`/dashboard/conversations/${id}`);
+  },
+
+  markConversationReviewed: async (id: string): Promise<{ status: string }> => {
+    return fetchJson<{ status: string }>(`/dashboard/conversations/${id}/review`, {
+      method: 'POST'
+    });
+  },
+
+  // Automations Grid
+  getAutomations: async (): Promise<AutomationCard[]> => {
+    return fetchJson<AutomationCard[]>('/dashboard/automations');
+  },
+
+  getAutomationDetail: async (id: string): Promise<AutomationCard> => {
+    return fetchJson<AutomationCard>(`/dashboard/automations/${id}`);
+  },
+
+  updateAutomation: async (id: string, payload: AutomationUpdatePayload): Promise<{ status: string; automation_id: string; data?: AutomationCard }> => {
+    return fetchJson<{ status: string; automation_id: string; data?: AutomationCard }>(`/dashboard/automations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  createAutomation: async (payload: Partial<AutomationCard>): Promise<{ status: string; automation_id: string; data?: AutomationCard }> => {
+    return fetchJson<{ status: string; automation_id: string; data?: AutomationCard }>('/dashboard/automations', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  deleteAutomation: async (id: string): Promise<{ status: string; automation_id: string }> => {
+    return fetchJson<{ status: string; automation_id: string }>(`/dashboard/automations/${id}`, {
+      method: 'DELETE'
+    });
+  },
+
+  // Agent Activity & Analytics
+  getAgentActivity: async (period = 'today'): Promise<AgentActivityData> => {
+    return fetchJson<AgentActivityData>(`/dashboard/agent-activity?period=${period}`);
+  },
+
+  // ── Properties Dashboard (100% Real PostgreSQL) ────────────────────────────
+
+  /** Fetches property cards with live conversation stats from PostgreSQL */
+  getPropertyDashboardCards: async (params?: Record<string, string>): Promise<PropertyDashboardResponse> => {
+    const query = new URLSearchParams(params || {}).toString();
+    return fetchJson<PropertyDashboardResponse>(`/properties/dashboard?${query}`);
+  },
+
+  /** Creates a new property record — persisted directly to PostgreSQL */
+  createProperty: async (data: PropertyCreatePayload): Promise<PropertyDashboardCard> => {
+    return fetchJson<PropertyDashboardCard>('/properties', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  },
+
+  /** Deletes a property from PostgreSQL permanently */
+  deleteProperty: async (id: string): Promise<{ status: string; property_id: string }> => {
+    return fetchJson<{ status: string; property_id: string }>(`/properties/${id}`, {
+      method: 'DELETE'
+    });
+  },
+
+  /** Toggles property Active/Inactive — persisted to PostgreSQL */
+  togglePropertyStatus: async (id: string, newStatus: string): Promise<PropertyDashboardCard> => {
+    return fetchJson<PropertyDashboardCard>(`/properties/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: newStatus })
+    });
+  },
+
+  /** Returns distinct cities for filter dropdowns */
+  getCities: async (): Promise<string[]> => {
+    return fetchJson<string[]>('/properties/cities');
+  }
+};
+
