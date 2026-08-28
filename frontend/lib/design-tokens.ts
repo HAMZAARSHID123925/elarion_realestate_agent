@@ -296,3 +296,77 @@ export const AUTOMATION_TOKENS: Record<string, {
 export function getAutomationToken(iconType: AutomationIconType) {
   return AUTOMATION_TOKENS[iconType] ?? AUTOMATION_TOKENS['_default'];
 }
+
+
+// ── Property Status Tokens ────────────────────────────────────────────────────
+export type PropertyStatus = 'Active' | 'Inactive' | string;
+
+export const PROPERTY_STATUS_TOKENS: Record<string, {
+  bg: string;
+  text: string;
+  dot: string;
+  border: string;
+}> = {
+  Active: {
+    bg: 'bg-emerald-50',
+    text: 'text-emerald-700',
+    dot: 'bg-emerald-500',
+    border: 'border-emerald-200',
+  },
+  Inactive: {
+    bg: 'bg-slate-100',
+    text: 'text-slate-500',
+    dot: 'bg-slate-400',
+    border: 'border-slate-300',
+  },
+  _default: {
+    bg: 'bg-slate-100',
+    text: 'text-slate-600',
+    dot: 'bg-slate-400',
+    border: 'border-slate-300',
+  },
+};
+
+export function getPropertyStatusToken(status: PropertyStatus) {
+  return PROPERTY_STATUS_TOKENS[status] ?? PROPERTY_STATUS_TOKENS['_default'];
+}
+
+
+// ── Property Type Tokens ──────────────────────────────────────────────────────
+export type PropertyType = 'house' | 'apartment' | 'plot' | 'commercial' | string;
+
+export const PROPERTY_TYPE_TOKENS: Record<string, {
+  iconBg: string;
+  iconColor: string;
+  label: string;
+}> = {
+  house: {
+    iconBg: 'bg-blue-50',
+    iconColor: 'text-blue-600',
+    label: 'House',
+  },
+  apartment: {
+    iconBg: 'bg-violet-50',
+    iconColor: 'text-violet-600',
+    label: 'Apartment',
+  },
+  plot: {
+    iconBg: 'bg-amber-50',
+    iconColor: 'text-amber-600',
+    label: 'Plot',
+  },
+  commercial: {
+    iconBg: 'bg-rose-50',
+    iconColor: 'text-rose-600',
+    label: 'Commercial',
+  },
+  _default: {
+    iconBg: 'bg-slate-50',
+    iconColor: 'text-slate-600',
+    label: 'Property',
+  },
+};
+
+export function getPropertyTypeToken(type: PropertyType) {
+  return PROPERTY_TYPE_TOKENS[type] ?? PROPERTY_TYPE_TOKENS['_default'];
+}

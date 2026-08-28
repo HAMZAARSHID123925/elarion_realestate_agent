@@ -18,3 +18,5 @@ This directory (`frontend/docs/`) contains all frontend-specific documentation, 
 - `/conversations/[id]` ➔ `GET /api/v1/dashboard/conversations/{id}` & `POST /api/v1/dashboard/conversations/{id}/review`
 - `/automations` ➔ `GET /api/v1/dashboard/automations` & `PATCH /api/v1/dashboard/automations/{id}`
 - `/agent-activity` ➔ `GET /api/v1/dashboard/agent-activity`
+- `/properties` ➔ `GET /api/v1/properties/dashboard` & `POST /api/v1/properties` & `DELETE /api/v1/properties/{id}` & `PATCH /api/v1/properties/{id}/status`
+
