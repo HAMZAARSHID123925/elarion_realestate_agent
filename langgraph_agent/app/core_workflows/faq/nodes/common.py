@@ -36,7 +36,8 @@ GEMINI_EMBEDDING_DIMENSION = 768
 
 def get_llm():
     """Same convention as maintenance/nodes/common.py -- Groq, temperature 0."""
-    return ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+    model_name = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+    return ChatGroq(model=model_name, temperature=0)
 
 
 # Reuse the same rate limiter as the rest of the orchestrator, so FAQ's Groq

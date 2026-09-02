@@ -38,10 +38,15 @@ _saver = None
 async def get_checkpointer():
     """Lazily opens one shared AsyncPostgresSaver pool for the process lifetime.
 
-    Neon PostgreSQL (serverless) drops idle SSL connections after ~5 minutes.
-    Production settings to survive that:
+    Neon PostgreSQL (serverless) drops idle SSL connections after ~5 minutes
+    AND free-tier limits total concurrent connections to ~5-8 across all
+    clients (API server, email server, whatsapp server may all share the
+    same database).  Production settings to survive that:
       - min_size=0   : no connections kept warm; all created on demand
-      - max_idle=240 : cull idle connections after 4 min (before Neon's 5-min cut)
+      - max_size=3   : kept low so multiple Elarion processes can share Neon's pool
+      - max_idle=120 : cull idle connections after 2 min (well before Neon's 5-min cut)
+      - timeout=60   : wait up to 60s for a connection (pipeline can be slow)
+      - max_lifetime=300 : recycle connections after 5 min to avoid stale SSL
       - reconnect_timeout=30 : give psycopg_pool 30 s to reconnect before raising
     """
     global _pool, _saver
@@ -54,8 +59,10 @@ async def get_checkpointer():
         _pool = AsyncConnectionPool(
             conninfo=DATABASE_URL,
             min_size=0,          # never keep idle connections alive (Neon kills them)
-            max_size=10,
-            max_idle=240,        # drop connections idle > 4 min before Neon's 5-min timeout
+            max_size=3,          # Neon free tier limits total connections — stay low
+            max_idle=120,        # drop connections idle > 2 min before Neon's 5-min timeout
+            timeout=60,          # wait up to 60s for a connection from the pool
+            max_lifetime=300,    # recycle connections after 5 min to avoid stale SSL
             reconnect_timeout=30,
             reconnect_failed=_on_reconnect_failed,
             kwargs={"autocommit": True},

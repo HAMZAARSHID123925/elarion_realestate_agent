@@ -56,7 +56,8 @@ def response_formatter_node(state: Dict[str, Any]) -> Dict[str, Any]:
         # Limit to top 3
         top_properties = properties[:3]
         
-        llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+        model_name = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+        llm = ChatGroq(model=model_name, temperature=0)
         
         system_prompt = """You are a professional, friendly real estate receptionist making a voice call.
 Your task is to take the JSON data about properties and read them naturally to the user.

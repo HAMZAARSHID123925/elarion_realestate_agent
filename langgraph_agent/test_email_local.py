@@ -56,7 +56,7 @@ def send_test_email(from_email: str, subject: str, body_text: str):
                 "Content-Type": "application/json",
                 "x-webhook-secret": os.getenv("RESEND_WEBHOOK_SECRET", "elarion_secret_dev")
             },
-            timeout=15
+            timeout=120  # Pipeline can take 30-60s on first run (MCP cold start + Groq LLM + DB)
         )
         if response.status_code == 200:
             print("  -> Webhook accepted (200 OK). Check email_server.py console for outbound response details!")

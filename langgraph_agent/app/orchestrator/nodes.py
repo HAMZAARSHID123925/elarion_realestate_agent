@@ -60,8 +60,14 @@ async def identification_node(state: OrchestratorState) -> Dict[str, Any]:
     tenant = None
     try:
         result_json = await mcp_client.call_tool("lookup_tenant", {"phone_or_email": user_id})
-        result = json.loads(result_json) if result_json else {}
-        if "error" not in result:
+        if isinstance(result_json, dict):
+            result = result_json
+        elif isinstance(result_json, str) and result_json.strip():
+            result = json.loads(result_json)
+        else:
+            result = {}
+            
+        if result and "error" not in result and result.get("tenant_id"):
             tenant = {
                 "id": result.get("tenant_id"),
                 "role": "tenant",
@@ -121,20 +127,30 @@ Return:
         return {
             "intent": result.intent,
             "urgency": result.urgency,
-            "entities": result.entities
+            "entities": result.entities,
+            "error": None
         }
     except Exception as e:
-        logger.error(f"Classification LLM failed: {e}")
-        # FAIL-SAFE: don't conflate "we couldn't classify this" with "this is a real
-        # emergency" -- those need different handling downstream. rules_engine_node
-        # checks `error` explicitly and routes this to a distinct review action
-        # instead of auto-escalating it as if urgency were genuinely high.
-        return {
-            "intent": "general",
-            "urgency": "medium",
-            "entities": {},
-            "error": "classification_failed"
-        }
+        logger.warning(f"Structured output LLM call failed ({e}), attempting JSON mode fallback...")
+        try:
+            fallback_llm = ChatGroq(model=FALLBACK_MODEL, temperature=0)
+            json_prompt = prompt + "\nRespond strictly in valid JSON format with keys: 'intent', 'urgency', 'entities'."
+            fb_res = await fallback_llm.ainvoke(json_prompt)
+            data = json.loads(fb_res.content.strip().strip("```json").strip("```"))
+            return {
+                "intent": data.get("intent", "general"),
+                "urgency": data.get("urgency", "low"),
+                "entities": data.get("entities", {}),
+                "error": None
+            }
+        except Exception as e2:
+            logger.error(f"Classification LLM fallback also failed: {e2}")
+            return {
+                "intent": "general",
+                "urgency": "medium",
+                "entities": {},
+                "error": "classification_failed"
+            }
 
 async def rules_engine_node(state: OrchestratorState) -> Dict[str, Any]:
     """

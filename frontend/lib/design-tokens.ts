@@ -136,7 +136,16 @@ export const CHANNEL_TOKENS: Record<string, {
 };
 
 export function getChannelToken(channel: ChannelType) {
-  return CHANNEL_TOKENS[channel] ?? CHANNEL_TOKENS['_default'];
+  // Backend stores channels as lowercase ('whatsapp', 'email') but tokens
+  // are keyed by title-case ('WhatsApp', 'Email'). Normalize before lookup.
+  const NORMALIZE_MAP: Record<string, string> = {
+    whatsapp: 'WhatsApp',
+    email: 'Email',
+    voice: 'Voice',
+    web: 'Web',
+  };
+  const normalized = NORMALIZE_MAP[channel?.toLowerCase()] ?? channel;
+  return CHANNEL_TOKENS[normalized] ?? CHANNEL_TOKENS['_default'];
 }
 
 

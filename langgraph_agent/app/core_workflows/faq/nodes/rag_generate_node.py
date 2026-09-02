@@ -34,7 +34,9 @@ async def rag_generate_node(state: FAQState) -> dict:
         ]
     )
 
-    answer = response.content
+    import re
+    raw_answer = response.content or ""
+    answer = re.sub(r"<think>.*?</think>", "", raw_answer, flags=re.DOTALL | re.IGNORECASE).strip()
 
     return {
         "knowledge_answer": answer,

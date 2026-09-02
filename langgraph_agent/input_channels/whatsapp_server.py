@@ -26,6 +26,35 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _validate_whatsapp_token_sync() -> None:
+    """Calls Meta's Graph API at startup to check if the access token is valid.
+    Logs a clear, actionable warning if the token has expired (they rotate
+    every 24h during testing) so the developer knows immediately instead of
+    only finding out when a reply fails to send later."""
+    if not (WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID):
+        logger.warning(
+            "⚠️  WHATSAPP_ACCESS_TOKEN or WHATSAPP_PHONE_NUMBER_ID not set -- "
+            "WhatsApp reply delivery will be skipped. Set them in .env."
+        )
+        return
+    url = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{WHATSAPP_PHONE_NUMBER_ID}"
+    try:
+        resp = requests.get(url, headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"}, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            display = data.get("display_phone_number", "N/A")
+            logger.info(f"✅ WhatsApp access token is VALID (phone: {display})")
+        else:
+            error_msg = resp.json().get("error", {}).get("message", resp.text[:200])
+            logger.warning(
+                f"❌ WhatsApp access token is EXPIRED or INVALID — {error_msg}\n"
+                f"   → Go to https://developers.facebook.com/apps/ → your app → WhatsApp → API Setup\n"
+                f"   → Click 'Generate' under Temporary Access Token, paste it into .env, and restart."
+            )
+    except Exception as e:
+        logger.warning(f"⚠️  Could not validate WhatsApp token (network issue?): {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Both maintenance and FAQ flows call out to their MCP servers (ticket
@@ -47,6 +76,10 @@ async def lifespan(app: FastAPI):
         logger.info("FAQ MCP client connected.")
     except Exception:
         logger.exception("Failed to connect FAQ MCP client -- full traceback above.")
+
+    # Validate WhatsApp access token early so expired tokens are caught
+    # at startup rather than on the first failed reply send.
+    _validate_whatsapp_token_sync()
 
     logger.info("Starting automated morning rent reminder scheduler...")
     try:

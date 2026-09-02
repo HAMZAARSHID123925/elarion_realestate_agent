@@ -60,4 +60,8 @@ async def recommend_generate_node(state: FAQState) -> dict:
         ]
     )
 
-    return {"recommendation_text": response.content}
+    import re
+    raw_text = response.content or ""
+    clean_text = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL | re.IGNORECASE).strip()
+
+    return {"recommendation_text": clean_text}

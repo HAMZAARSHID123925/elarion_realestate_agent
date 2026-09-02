@@ -7,8 +7,11 @@ from langchain_groq import ChatGroq
 logger = logging.getLogger(__name__)
 
 
+import os
+
 def get_llm():
-    return ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+    model_name = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+    return ChatGroq(model=model_name, temperature=0)
 
 
 # Try to use the rate limiter from orchestrator if available

@@ -22,6 +22,7 @@ should call -- VAPI today, WhatsApp/Email/SMS later. Nothing about this file
 needs to change when a new channel is added; only a new adapter that also
 calls handle_request() is needed.
 """
+import re
 import logging
 from typing import Dict, Any, Optional
 
@@ -45,12 +46,20 @@ from app.department_nodes import (
 logger = logging.getLogger(__name__)
 
 
+def clean_thinking_tags(text: str) -> str:
+    """Strips <think>...</think> chain-of-thought blocks emitted by reasoning models (e.g. Qwen 3.6)."""
+    if not text:
+        return ""
+    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    return cleaned.strip()
+
+
 def compose_response(state: PipelineState) -> Dict[str, Any]:
     """Last stop before handing control back to the channel adapter --
     normalizes whichever department ran into a single response string."""
+    raw = state.get("final_response") or "I'm sorry, I couldn't process that. Could you try again?"
     return {
-        "final_response": state.get("final_response")
-        or "I'm sorry, I couldn't process that. Could you try again?"
+        "final_response": clean_thinking_tags(raw)
     }
 
 
@@ -179,8 +188,15 @@ async def handle_request(
 
     # Log turn to conversation database for Dashboard UI (Atomic Production State Machine)
     try:
+        import hashlib
         from database.conversation_repository import conversation_repository
-        conv_id = f"TF-{hash(user_id) % 100000:05d}"
+        
+        # Deterministic conversation ID: combines channel and normalized user_id
+        # (hashlib.md5 ensures the same user always maps to the same ID across process restarts)
+        clean_user = user_id.lower().strip()
+        hash_int = int(hashlib.md5(f"{channel.lower()}:{clean_user}".encode("utf-8")).hexdigest(), 16)
+        conv_id = f"TF-{hash_int % 100000:05d}"
+        
         profile_name = (channel_metadata or {}).get("profile_name") or user_id
         
         await conversation_repository.record_turn_and_update_state(

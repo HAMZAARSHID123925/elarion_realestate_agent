@@ -58,7 +58,7 @@ These values are **computed dynamically** from the `conversations` table using P
 
 | Stat | SQL Logic |
 |---|---|
-| `conversations_count` | `COUNT(*) FROM conversations WHERE property_id = ?` |
+|`conversations_count` | `COUNT(*) FROM conversations WHERE property_id = ?` |
 | `maintenance_count` | `COUNT(*) FROM conversations WHERE property_id = ? AND intent = 'Maintenance Request'` |
 | `escalations_count` | `COUNT(*) FROM conversations WHERE property_id = ? AND status = 'Escalated'` |
 | `active_automations` | `SELECT name FROM automations WHERE status = 'Active' AND scope LIKE '%All Properties%'` |

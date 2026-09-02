@@ -140,7 +140,8 @@ async def classify_renewal_intent(
         from langchain_groq import ChatGroq
         from langchain_core.prompts import ChatPromptTemplate
 
-        llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+        model_name = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+        llm = ChatGroq(model=model_name, temperature=0)
         structured_llm = llm.with_structured_output(RenewalIntentResult)
 
         prompt = ChatPromptTemplate.from_messages([
