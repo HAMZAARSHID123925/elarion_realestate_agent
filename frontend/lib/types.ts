@@ -80,18 +80,28 @@ export interface ConversationDetail extends ConversationSummary {
   messages: ConversationMessage[];
 }
 
+export interface WorkflowStepData {
+  id: string;
+  title: string;
+  description: string;
+  isAiTask?: boolean;
+  isConditional?: boolean;
+  isCurrent?: boolean;
+}
+
 export interface AutomationCard {
   id: string;
   name: string;
   status: string;                   // "Active" | "Inactive"
   description: string;
+  tagline?: string;
   handles: string[];                 // Short handle labels for the card body
   channels: string[];                // ["WhatsApp", "Email", "Voice", "Web"]
   escalation_conditions: string[];   // Bullet list in the amber box
   scope: string;                     // "All Properties (42)" | "3 Properties"
   properties_count?: number;
   icon_type?: string;                // "maintenance" | "rent" | "support" | "lease" | "reporting"
-  steps?: any[];
+  steps?: WorkflowStepData[];
 }
 
 export interface AutomationUpdatePayload {
@@ -102,7 +112,7 @@ export interface AutomationUpdatePayload {
   escalation_conditions?: string[];
   channels?: string[];
   scope?: string;
-  steps?: any[];
+  steps?: WorkflowStepData[];
 }
 
 export interface AgentActivityData {
@@ -172,4 +182,3 @@ export interface PropertyCreatePayload {
   status: string;
   units_count: number;
 }
-

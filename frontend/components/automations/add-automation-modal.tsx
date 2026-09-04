@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Plus, Sparkles, Loader2, Check } from 'lucide-react';
+import { X, Plus, Sparkles, Loader2, Check, AlertCircle } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { AutomationCard } from '@/lib/types';
 
@@ -33,6 +33,7 @@ export default function AddAutomationModal({
   const [escalationText, setEscalationText] = useState('AI confidence < 85%\nManual approval requested');
   const [scope, setScope] = useState('All Properties (42)');
 
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -40,15 +41,54 @@ export default function AddAutomationModal({
   if (!isOpen) return null;
 
   const toggleChannel = (ch: string) => {
-    setSelectedChannels((prev) =>
-      prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch]
-    );
+    setSelectedChannels((prev) => {
+      const updated = prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch];
+      if (updated.length > 0 && fieldErrors.channels) {
+        setFieldErrors((errs) => {
+          const cp = { ...errs };
+          delete cp.channels;
+          return cp;
+        });
+      }
+      return updated;
+    });
+    setError(null);
+  };
+
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+
+    if (!name.trim()) {
+      errors.name = 'Automation name is required.';
+    } else if (name.trim().length < 3) {
+      errors.name = 'Automation name must be at least 3 characters.';
+    }
+
+    if (selectedChannels.length === 0) {
+      errors.channels = 'Select at least one active communication channel.';
+    }
+
+    const conditions = escalationText
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (conditions.length === 0) {
+      errors.escalation = 'At least one escalation condition is required.';
+    }
+
+    if (!scope.trim()) {
+      errors.scope = 'Property scope is required.';
+    }
+
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) {
-      setError('Please provide an automation name.');
+    if (!validateForm()) {
+      setError('Please resolve the highlighted validation errors.');
       return;
     }
 
@@ -98,10 +138,11 @@ export default function AddAutomationModal({
         setIsSubmitting(false);
         onCreated(createdCard);
         onClose();
-      }, 1000);
-    } catch (err: any) {
+      }, 800);
+    } catch (err: unknown) {
       console.error('Error creating automation:', err);
-      setError(err?.message || 'Failed to save automation to database.');
+      const msg = err instanceof Error ? err.message : 'Failed to save automation to database.';
+      setError(msg);
       setIsSubmitting(false);
     }
   };
@@ -116,11 +157,11 @@ export default function AddAutomationModal({
 
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
           
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center font-bold">
                 <Sparkles size={18} />
               </div>
@@ -137,8 +178,9 @@ export default function AddAutomationModal({
           {/* Form */}
           <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
             {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
-                ⚠ {error}
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium flex items-center gap-2">
+                <AlertCircle size={15} />
+                <span>{error}</span>
               </div>
             )}
 
@@ -151,10 +193,25 @@ export default function AddAutomationModal({
                 type="text"
                 placeholder="e.g., Security Inspection, Late Fee Waiver"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full text-sm bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:bg-white transition-all"
-                required
+                onChange={(e) => {
+                  setName(e.target.value);
+                  if (fieldErrors.name) {
+                    setFieldErrors((prev) => {
+                      const cp = { ...prev };
+                      delete cp.name;
+                      return cp;
+                    });
+                  }
+                }}
+                className={`w-full text-sm rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 transition-all ${
+                  fieldErrors.name
+                    ? 'bg-red-50/30 border border-red-300 focus:ring-red-400 focus:border-red-400'
+                    : 'bg-slate-50 border border-slate-200 focus:ring-teal-400 focus:bg-white'
+                }`}
               />
+              {fieldErrors.name && (
+                <p className="text-xs text-red-500 mt-1 font-medium">{fieldErrors.name}</p>
+              )}
             </div>
 
             {/* Workflow Category */}
@@ -165,7 +222,7 @@ export default function AddAutomationModal({
               <select
                 value={iconType}
                 onChange={(e) => setIconType(e.target.value)}
-                className="w-full text-sm bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:bg-white transition-all"
+                className="w-full text-sm bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:bg-white transition-all appearance-none cursor-pointer"
               >
                 {ICON_TYPES.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -192,7 +249,7 @@ export default function AddAutomationModal({
             {/* Channels */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Active Communication Channels
+                Active Communication Channels *
               </label>
               <div className="flex items-center gap-2 flex-wrap">
                 {AVAILABLE_CHANNELS.map((ch) => {
@@ -213,34 +270,69 @@ export default function AddAutomationModal({
                   );
                 })}
               </div>
+              {fieldErrors.channels && (
+                <p className="text-xs text-red-500 mt-1 font-medium">{fieldErrors.channels}</p>
+              )}
             </div>
 
             {/* Escalation Conditions */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Escalation Conditions (one per line)
+                Escalation Conditions (one per line) *
               </label>
               <textarea
                 rows={3}
                 value={escalationText}
-                onChange={(e) => setEscalationText(e.target.value)}
+                onChange={(e) => {
+                  setEscalationText(e.target.value);
+                  if (fieldErrors.escalation) {
+                    setFieldErrors((prev) => {
+                      const cp = { ...prev };
+                      delete cp.escalation;
+                      return cp;
+                    });
+                  }
+                }}
                 placeholder="e.g., Emergency detected&#10;AI confidence < 85%"
-                className="w-full text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:bg-white resize-none transition-all"
+                className={`w-full text-xs text-slate-700 rounded-xl p-3 focus:outline-none focus:ring-2 resize-none transition-all ${
+                  fieldErrors.escalation
+                    ? 'bg-red-50/30 border border-red-300 focus:ring-red-400 focus:border-red-400'
+                    : 'bg-slate-50 border border-slate-200 focus:ring-teal-400 focus:bg-white'
+                }`}
               />
+              {fieldErrors.escalation && (
+                <p className="text-xs text-red-500 mt-1 font-medium">{fieldErrors.escalation}</p>
+              )}
             </div>
 
             {/* Scope */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Property Scope
+                Property Scope *
               </label>
               <input
                 type="text"
                 placeholder="e.g., All Properties (42) or 5 Selected Properties"
                 value={scope}
-                onChange={(e) => setScope(e.target.value)}
-                className="w-full text-sm bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:bg-white transition-all"
+                onChange={(e) => {
+                  setScope(e.target.value);
+                  if (fieldErrors.scope) {
+                    setFieldErrors((prev) => {
+                      const cp = { ...prev };
+                      delete cp.scope;
+                      return cp;
+                    });
+                  }
+                }}
+                className={`w-full text-sm rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 transition-all ${
+                  fieldErrors.scope
+                    ? 'bg-red-50/30 border border-red-300 focus:ring-red-400 focus:border-red-400'
+                    : 'bg-slate-50 border border-slate-200 focus:ring-teal-400 focus:bg-white'
+                }`}
               />
+              {fieldErrors.scope && (
+                <p className="text-xs text-red-500 mt-1 font-medium">{fieldErrors.scope}</p>
+              )}
             </div>
 
             {/* Actions */}

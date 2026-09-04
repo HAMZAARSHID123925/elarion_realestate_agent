@@ -3,6 +3,7 @@ Automation Repository — Core Dashboard & Database Data Layer.
 
 Provides data access methods for workflow automations, PostgreSQL persistence,
 dynamic configuration updates, and audit logging.
+Uses shared connection pool from database.pool.
 """
 import os
 import json
@@ -11,11 +12,11 @@ import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
-import psycopg
 from psycopg.rows import dict_row
 from dotenv import load_dotenv
 
 from database.audit_repository import audit_repository
+from database.pool import get_db_connection, get_database_url
 
 # Ensure root directory environment variables are loaded
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -28,10 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_db_url() -> str:
-    url = os.getenv("DATABASE_URL")
-    if not url:
-        raise RuntimeError("DATABASE_URL environment variable is not set")
-    return url
+    return get_database_url()
 
 
 # Default seed data fallback in case database connection fails or is uninitialized
@@ -58,31 +56,33 @@ DEFAULT_AUTOMATIONS: List[Dict[str, Any]] = [
         "id": "rent_reminder",
         "name": "Rent Reminder",
         "status": "Active",
-        "description": "Handles: Automated follow-ups, payment link generation, late fee calculation.",
-        "tagline": "Automated payment follow-ups, late fee calculation, and tenant disputes.",
-        "handles": ["Automated follow-ups", "payment link generation", "late fee calculation"],
-        "channels": ["WhatsApp", "Email", "SMS"],
+        "description": "Handles: Payment status check, day 30/35 notices, direct WhatsApp reminder.",
+        "tagline": "Automated ledger tracking with polite multi-channel escalation.",
+        "handles": ["Payment status check", "day 30/35 notices", "direct WhatsApp reminder"],
+        "channels": ["WhatsApp", "SMS", "Email"],
         "escalation_conditions": [
-            "> 15 days past due",
-            "Tenant dispute initiated",
-            "Payment plan request detected"
+            "Payment overdue > 5 days after reminder",
+            "Tenant disputes charge amount",
+            "Payment plan requested",
+            "Manual hold requested by PM"
         ],
-        "scope": "3 Properties",
-        "properties_count": 3,
+        "scope": "All Properties (42)",
+        "properties_count": 42,
         "icon_type": "rent"
     },
     {
         "id": "resident_support",
-        "name": "Resident Support / FAQ",
+        "name": "Resident Support",
         "status": "Active",
-        "description": "Handles: Policy Q&A, amenity booking, noise complaints, general inquiries.",
-        "tagline": "24/7 AI receptionist answering building FAQs and handling noise complaints.",
-        "handles": ["Policy Q&A", "amenity booking", "noise complaints", "general inquiries"],
-        "channels": ["WhatsApp", "Email", "Voice", "Web"],
+        "description": "Handles: Building rules, parking policies, amenities booking, package queries.",
+        "tagline": "24/7 instant AI Q&A backed by building policy vector search.",
+        "handles": ["Building rules", "parking policies", "amenities booking", "package queries"],
+        "channels": ["WhatsApp", "Web", "Email"],
         "escalation_conditions": [
-            "Sentiment is frustrated/angry",
-            "Unrecognized policy question",
-            "Repeat complaint (> 2 times)"
+            "Policy conflict or ambiguous rule",
+            "Noise complaint against neighbor",
+            "Tenant requests property manager callback",
+            "Sentiment negative / agitated tone"
         ],
         "scope": "All Properties (42)",
         "properties_count": 42,
@@ -90,16 +90,17 @@ DEFAULT_AUTOMATIONS: List[Dict[str, Any]] = [
     },
     {
         "id": "lease_renewal",
-        "name": "Lease Renewal",
+        "name": "Leasing / Renewal",
         "status": "Active",
-        "description": "Handles: Expiry tracking, renewal offer dispatch, intent tracking, doc prep.",
-        "tagline": "Automated 90-day renewal tracking, rent adjustment calculations, and doc prep.",
-        "handles": ["Expiry tracking", "renewal offer dispatch", "intent tracking", "doc prep"],
+        "description": "Handles: Expiry detection (90/60/30d), intent classification, offer generation.",
+        "tagline": "Proactive tenant retention pipeline with dynamic rent calculation.",
+        "handles": ["Expiry detection (90/60/30d)", "intent classification", "offer generation"],
         "channels": ["Email", "WhatsApp"],
         "escalation_conditions": [
-            "Tenant requests rent decrease",
-            "Intent is 'Not Renewing'",
-            "Offer unacknowledged after 14 days"
+            "Tenant proposes counter-offer on rate",
+            "Tenant requests lease term exception",
+            "Intent to vacate confirmed",
+            "Renewal deadline < 14 days with no response"
         ],
         "scope": "All Properties (42)",
         "properties_count": 42,
@@ -108,18 +109,19 @@ DEFAULT_AUTOMATIONS: List[Dict[str, Any]] = [
     {
         "id": "owner_reporting",
         "name": "Owner Reporting",
-        "status": "Active",
-        "description": "Handles: Monthly statement compilation, payout calculation, distribution.",
-        "tagline": "Automated owner statement generation and net distribution reports.",
-        "handles": ["Monthly statement compilation", "payout calculation", "distribution"],
+        "status": "Inactive",
+        "description": "Handles: Monthly statement compilation, occupancy metrics, maintenance cost breakdown.",
+        "tagline": "Automated monthly financial rollup & investor distribution.",
+        "handles": ["Monthly statement compilation", "occupancy metrics", "maintenance cost breakdown"],
         "channels": ["Email", "Web Portal"],
         "escalation_conditions": [
-            "Payout anomaly (> 20% variance)",
-            "Unallocated maintenance expense",
-            "Owner dispute"
+            "Revenue drop > 10% vs prior month",
+            "Capital expenditure > $2,000",
+            "Owner requests custom report format",
+            "Audit log discrepancy detected"
         ],
-        "scope": "All Properties (42)",
-        "properties_count": 42,
+        "scope": "Selected Properties (18)",
+        "properties_count": 18,
         "icon_type": "reporting"
     }
 ]
@@ -129,32 +131,29 @@ class AutomationRepository:
     def __init__(self, db_url: Optional[str] = None):
         self._db_url = db_url
 
-    def _url(self) -> str:
-        return self._db_url or get_db_url()
+    def _url(self) -> Optional[str]:
+        return self._db_url
 
     def _format_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
-        """Ensures JSONB columns (handles, channels, escalation_conditions, steps) are parsed."""
-        res = dict(row)
+        """Ensures JSON-encoded columns are returned as native Python lists."""
+        d = dict(row)
         for key in ["handles", "channels", "escalation_conditions", "steps"]:
-            if key in res and isinstance(res[key], str):
+            val = d.get(key)
+            if isinstance(val, str):
                 try:
-                    res[key] = json.loads(res[key])
+                    d[key] = json.loads(val)
                 except Exception:
-                    res[key] = []
-        return res
+                    d[key] = [s.strip() for s in val.split(",") if s.strip()]
+            elif val is None:
+                d[key] = []
+        return d
 
     async def list_automations(self) -> List[Dict[str, Any]]:
         """
-        Retrieves all automation configurations from PostgreSQL.
-        Falls back gracefully if DB is unavailable.
+        Returns all automation records from PostgreSQL, falling back to seed defaults if DB is empty.
         """
-        db_url = self._url()
         try:
-            conn = await asyncio.wait_for(
-                psycopg.AsyncConnection.connect(db_url, connect_timeout=3),
-                timeout=3.0
-            )
-            async with conn:
+            async with get_db_connection(self._url()) as conn:
                 async with conn.cursor(row_factory=dict_row) as cur:
                     await cur.execute("SELECT * FROM automations ORDER BY created_at ASC;")
                     rows = await cur.fetchall()
@@ -169,13 +168,8 @@ class AutomationRepository:
         """
         Retrieves a single automation by ID from PostgreSQL.
         """
-        db_url = self._url()
         try:
-            conn = await asyncio.wait_for(
-                psycopg.AsyncConnection.connect(db_url, connect_timeout=3),
-                timeout=3.0
-            )
-            async with conn:
+            async with get_db_connection(self._url()) as conn:
                 async with conn.cursor(row_factory=dict_row) as cur:
                     await cur.execute("SELECT * FROM automations WHERE id = %s;", (automation_id,))
                     row = await cur.fetchone()
@@ -229,24 +223,19 @@ class AutomationRepository:
         set_clause = ", ".join(fields)
         query = f"UPDATE automations SET {set_clause} WHERE id = %s RETURNING *;"
 
-        db_url = self._url()
         after_state = None
 
         try:
-            conn = await asyncio.wait_for(
-                psycopg.AsyncConnection.connect(db_url, connect_timeout=3),
-                timeout=3.0
-            )
-            async with conn:
+            async with get_db_connection(self._url()) as conn:
                 async with conn.cursor(row_factory=dict_row) as cur:
                     await cur.execute(query, params)
                     row = await cur.fetchone()
-                    await conn.commit()
+                    if hasattr(conn, "commit") and not getattr(conn, "autocommit", False):
+                        await conn.commit()
                     if row:
                         after_state = self._format_row(row)
         except Exception as e:
             logger.error(f"Error updating automation #{automation_id} in PostgreSQL: {e}")
-            # In-memory merge fallback if DB write fails
             if before_state:
                 after_state = dict(before_state)
                 for k, v in updates.items():
@@ -254,7 +243,6 @@ class AutomationRepository:
                         after_state[k] = v
 
         if after_state:
-            # Audit log persistence (dispatched in background task for non-blocking fast response)
             try:
                 asyncio.create_task(audit_repository.create_audit_log(
                     action="UPDATE_AUTOMATION",
@@ -290,7 +278,6 @@ class AutomationRepository:
         properties_count = data.get("properties_count", 42)
         icon_type = data.get("icon_type", "maintenance")
 
-        db_url = self._url()
         query = """
             INSERT INTO automations (id, name, status, description, tagline, handles, channels, escalation_conditions, scope, properties_count, icon_type)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -309,15 +296,12 @@ class AutomationRepository:
 
         res = None
         try:
-            conn = await asyncio.wait_for(
-                psycopg.AsyncConnection.connect(db_url, connect_timeout=3),
-                timeout=3.0
-            )
-            async with conn:
+            async with get_db_connection(self._url()) as conn:
                 async with conn.cursor(row_factory=dict_row) as cur:
                     await cur.execute(query, (auto_id, name, status, description, tagline, handles, channels, escalation_conditions, scope, properties_count, icon_type))
                     row = await cur.fetchone()
-                    await conn.commit()
+                    if hasattr(conn, "commit") and not getattr(conn, "autocommit", False):
+                        await conn.commit()
                     if row:
                         res = self._format_row(row)
         except Exception as e:
@@ -360,21 +344,14 @@ class AutomationRepository:
         """
         before_state = await self.get_automation_by_id(automation_id)
 
-        db_url = self._url()
-        deleted = False
         try:
-            conn = await asyncio.wait_for(
-                psycopg.AsyncConnection.connect(db_url, connect_timeout=3),
-                timeout=3.0
-            )
-            async with conn:
+            async with get_db_connection(self._url()) as conn:
                 async with conn.cursor() as cur:
                     await cur.execute("DELETE FROM automations WHERE id = %s;", (automation_id,))
-                    deleted = (cur.rowcount > 0)
-                    await conn.commit()
+                    if hasattr(conn, "commit") and not getattr(conn, "autocommit", False):
+                        await conn.commit()
         except Exception as e:
             logger.error(f"Error deleting automation #{automation_id} from PostgreSQL: {e}")
-            deleted = True # Fallback optimistic true
 
         try:
             asyncio.create_task(audit_repository.create_audit_log(

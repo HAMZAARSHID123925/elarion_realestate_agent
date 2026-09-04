@@ -225,7 +225,7 @@ async def update_automation(
     Persists directly to PostgreSQL database and creates an audit log record.
     """
     try:
-        updates = payload.dict(exclude_unset=True)
+        updates = payload.model_dump(exclude_unset=True)
         if not updates:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -272,7 +272,7 @@ async def create_automation(
     user: AuthenticatedUser = Security(require_auth)
 ) -> Dict[str, Any]:
     try:
-        data = payload.dict(exclude_unset=True)
+        data = payload.model_dump(exclude_unset=True)
         actor_name = getattr(user, "key_identifier", "property_manager") or "property_manager"
         created_record = await automation_repository.create_automation(
             data=data,

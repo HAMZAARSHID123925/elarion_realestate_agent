@@ -2,38 +2,35 @@
 Dashboard Repository — Core UI Aggregator Data Layer.
 
 Provides aggregate data for Overview, Automations Grid, and Agent Activity screens.
+Connects via shared connection pool in database.pool.
 """
 import os
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
-import psycopg
 from psycopg.rows import dict_row
 from dotenv import load_dotenv
+from database.pool import get_db_connection, get_database_url
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
 
 def get_db_url() -> str:
-    url = os.getenv("DATABASE_URL")
-    if not url:
-        raise RuntimeError("DATABASE_URL environment variable is not set")
-    return url
+    return get_database_url()
 
 
 class DashboardRepository:
     def __init__(self, db_url: Optional[str] = None):
         self._db_url = db_url
 
-    def _url(self) -> str:
-        return self._db_url or get_db_url()
+    def _url(self) -> Optional[str]:
+        return self._db_url
 
     async def get_overview_metrics(self) -> Dict[str, Any]:
         """Base stats count for legacy endpoints."""
-        db_url = self._url()
-        async with await psycopg.AsyncConnection.connect(db_url) as conn:
+        async with get_db_connection(self._url()) as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
                 metrics = {}
                 
@@ -65,8 +62,7 @@ class DashboardRepository:
 
     async def get_full_overview_data(self) -> Dict[str, Any]:
         """Returns complete Overview page payload backed by 100% REAL database records."""
-        db_url = self._url()
-        async with await psycopg.AsyncConnection.connect(db_url) as conn:
+        async with get_db_connection(self._url()) as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
                 # 1. Real Top Stat Cards
                 await cur.execute("SELECT COUNT(*) as count FROM conversations;")
@@ -100,8 +96,6 @@ class DashboardRepository:
 
                 avg_response_time = int(t_row["avg_sec"]) if t_row and t_row["avg_sec"] is not None else 0
                 auto_rate = float(round((ai_resolved / total_conversations) * 100, 1)) if total_conversations > 0 else 0.0
-
-
 
                 stats = {
                     "conversations": int(total_conversations),
@@ -144,9 +138,6 @@ class DashboardRepository:
                     for r in activity_rows
                 ]
 
-
-
-
                 # 4. Real Recent Activity Feed from PostgreSQL Messages
                 await cur.execute("""
                     SELECT 
@@ -168,15 +159,13 @@ class DashboardRepository:
                     "recent_activity": recent_activity
                 }
 
-
-
     async def get_automations_list(self) -> List[Dict[str, Any]]:
         """Returns workflow rules list for Automations Grid from PostgreSQL database."""
         from database.automation_repository import automation_repository
         return await automation_repository.list_automations()
 
     async def get_agent_activity_metrics(self, period: str = "today") -> Dict[str, Any]:
-        """Returns metrics and execution feeds matching input_file_4.png."""
+        """Returns metrics and execution feeds."""
         return {
             "metrics": {
                 "total_executions": 428,

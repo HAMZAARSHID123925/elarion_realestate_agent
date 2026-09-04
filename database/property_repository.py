@@ -3,15 +3,15 @@ Property Repository — Phase 4 API Layer + Phase 9 Dashboard Cards.
 
 Canonical PostgreSQL data access for Property and Unit entities.
 Uses async psycopg with row_factory=dict_row.
-Connects via DATABASE_URL.
+Connects via shared connection pool in database.pool.
 """
 import os
 import logging
 from typing import List, Dict, Any, Optional
 
-import psycopg
 from psycopg.rows import dict_row
 from dotenv import load_dotenv
+from database.pool import get_db_connection, get_database_url
 
 # Ensure root directories are loaded
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -26,10 +26,7 @@ logger = logging.getLogger(__name__)
 
 def get_db_url() -> str:
     """Returns DATABASE_URL, raising if not configured."""
-    url = os.getenv("DATABASE_URL")
-    if not url:
-        raise RuntimeError("DATABASE_URL environment variable is not set")
-    return url
+    return get_database_url()
 
 
 class PropertyRepository:
@@ -38,8 +35,8 @@ class PropertyRepository:
     def __init__(self, db_url: Optional[str] = None):
         self._db_url = db_url
 
-    def _url(self) -> str:
-        return self._db_url or get_db_url()
+    def _url(self) -> Optional[str]:
+        return self._db_url
 
     async def list_properties(
         self,
@@ -90,8 +87,7 @@ class PropertyRepository:
         """
         params.append(limit)
 
-        db_url = self._url()
-        async with await psycopg.AsyncConnection.connect(db_url) as conn:
+        async with get_db_connection(self._url()) as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(sql, params)
                 rows = await cur.fetchall()
@@ -101,8 +97,7 @@ class PropertyRepository:
         """
         Retrieves a single property record by ID.
         """
-        db_url = self._url()
-        async with await psycopg.AsyncConnection.connect(db_url) as conn:
+        async with get_db_connection(self._url()) as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
@@ -122,8 +117,7 @@ class PropertyRepository:
         """
         Retrieves all rental units belonging to a property.
         """
-        db_url = self._url()
-        async with await psycopg.AsyncConnection.connect(db_url) as conn:
+        async with get_db_connection(self._url()) as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
@@ -141,7 +135,6 @@ class PropertyRepository:
         """
         Creates a new property record.
         """
-        db_url = self._url()
         property_id = data.get("property_id")
         if not property_id:
             import uuid
@@ -165,11 +158,12 @@ class PropertyRepository:
         
         sql = f"INSERT INTO properties ({columns}) VALUES ({placeholders}) RETURNING property_id;"
         
-        async with await psycopg.AsyncConnection.connect(db_url) as conn:
+        async with get_db_connection(self._url()) as conn:
             async with conn.cursor() as cur:
                 await cur.execute(sql, values_list)
                 result = await cur.fetchone()
-                await conn.commit()
+                if hasattr(conn, "commit") and not getattr(conn, "autocommit", False):
+                    await conn.commit()
                 return result[0] if result else property_id
 
     async def update_property(self, property_id: str, data: Dict[str, Any]) -> bool:
@@ -179,7 +173,6 @@ class PropertyRepository:
         if not data:
             return True
 
-        db_url = self._url()
         updates = []
         params = []
         
@@ -194,59 +187,73 @@ class PropertyRepository:
             return True
             
         params.append(property_id)
-        
         sql = f"UPDATE properties SET {', '.join(updates)} WHERE property_id = %s;"
         
-        async with await psycopg.AsyncConnection.connect(db_url) as conn:
+        async with get_db_connection(self._url()) as conn:
             async with conn.cursor() as cur:
                 await cur.execute(sql, params)
-                await conn.commit()
+                if hasattr(conn, "commit") and not getattr(conn, "autocommit", False):
+                    await conn.commit()
                 return cur.rowcount > 0
 
     async def delete_property(self, property_id: str) -> bool:
         """
         Deletes a property record from PostgreSQL.
-        Disassociates or removes child records across all dependent tables:
-          - conversations, tenants, maintenance_tickets, human_escalations, renewal_reminders, renewal_intents (property_id = NULL)
-          - lease_expiry_events, leases, units (deleted)
+        Disassociates or removes child records across all dependent tables using explicit SQL statements.
         """
-        db_url = self._url()
-        async with await psycopg.AsyncConnection.connect(db_url) as conn:
+        async with get_db_connection(self._url()) as conn:
             async with conn.cursor() as cur:
-                # 1. Disassociate tables where property_id is nullable
-                dependent_tables = [
-                    "conversations",
-                    "tenants",
-                    "maintenance_tickets",
-                    "human_escalations",
-                    "renewal_reminders",
-                    "renewal_intents",
-                ]
-                for table in dependent_tables:
-                    try:
-                        await cur.execute(
-                            f"UPDATE {table} SET property_id = NULL WHERE property_id = %s;",
-                            (property_id,)
-                        )
-                    except Exception as e:
-                        logger.warning(f"Could not update {table} property_id: {e}")
+                # 1. Explicitly disassociate nullable property_id references
+                try:
+                    await cur.execute("UPDATE conversations SET property_id = NULL WHERE property_id = %s;", (property_id,))
+                except Exception as e:
+                    logger.warning(f"Could not disassociate conversations property_id: {e}")
+
+                try:
+                    await cur.execute("UPDATE tenants SET property_id = NULL WHERE property_id = %s;", (property_id,))
+                except Exception as e:
+                    logger.warning(f"Could not disassociate tenants property_id: {e}")
+
+                try:
+                    await cur.execute("UPDATE maintenance_tickets SET property_id = NULL WHERE property_id = %s;", (property_id,))
+                except Exception as e:
+                    logger.warning(f"Could not disassociate maintenance_tickets property_id: {e}")
+
+                try:
+                    await cur.execute("UPDATE human_escalations SET property_id = NULL WHERE property_id = %s;", (property_id,))
+                except Exception as e:
+                    logger.warning(f"Could not disassociate human_escalations property_id: {e}")
+
+                try:
+                    await cur.execute("UPDATE renewal_reminders SET property_id = NULL WHERE property_id = %s;", (property_id,))
+                except Exception as e:
+                    logger.warning(f"Could not disassociate renewal_reminders property_id: {e}")
+
+                try:
+                    await cur.execute("UPDATE renewal_intents SET property_id = NULL WHERE property_id = %s;", (property_id,))
+                except Exception as e:
+                    logger.warning(f"Could not disassociate renewal_intents property_id: {e}")
 
                 # 2. Clean up child records tied directly to property
-                for table in ["lease_expiry_events", "leases", "units"]:
-                    try:
-                        await cur.execute(
-                            f"DELETE FROM {table} WHERE property_id = %s;",
-                            (property_id,)
-                        )
-                    except Exception as e:
-                        logger.warning(f"Could not delete from {table}: {e}")
+                try:
+                    await cur.execute("DELETE FROM lease_expiry_events WHERE property_id = %s;", (property_id,))
+                except Exception as e:
+                    logger.warning(f"Could not delete lease_expiry_events: {e}")
+
+                try:
+                    await cur.execute("DELETE FROM leases WHERE property_id = %s;", (property_id,))
+                except Exception as e:
+                    logger.warning(f"Could not delete leases: {e}")
+
+                try:
+                    await cur.execute("DELETE FROM units WHERE property_id = %s;", (property_id,))
+                except Exception as e:
+                    logger.warning(f"Could not delete units: {e}")
 
                 # 3. Delete the property itself
-                await cur.execute(
-                    "DELETE FROM properties WHERE property_id = %s;",
-                    (property_id,)
-                )
-                await conn.commit()
+                await cur.execute("DELETE FROM properties WHERE property_id = %s;", (property_id,))
+                if hasattr(conn, "commit") and not getattr(conn, "autocommit", False):
+                    await conn.commit()
                 return cur.rowcount > 0
 
     async def toggle_property_status(self, property_id: str, new_status: str) -> Optional[Dict[str, Any]]:
@@ -256,15 +263,15 @@ class PropertyRepository:
         if new_status not in ("Active", "Inactive"):
             new_status = "Active"
             
-        db_url = self._url()
-        async with await psycopg.AsyncConnection.connect(db_url) as conn:
+        async with get_db_connection(self._url()) as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     "UPDATE properties SET status = %s WHERE property_id = %s RETURNING property_id;",
                     (new_status, property_id)
                 )
                 result = await cur.fetchone()
-                await conn.commit()
+                if hasattr(conn, "commit") and not getattr(conn, "autocommit", False):
+                    await conn.commit()
                 if not result:
                     return None
                 return await self.get_property_by_id(property_id)
@@ -282,7 +289,6 @@ class PropertyRepository:
         Each card includes: conversations_count, maintenance_count, escalations_count,
         and active_automations — all queried from live database tables.
         """
-        db_url = self._url()
         conditions = []
         params: List[Any] = []
 
@@ -333,7 +339,7 @@ class PropertyRepository:
             LIMIT %s;
         """
 
-        async with await psycopg.AsyncConnection.connect(db_url) as conn:
+        async with get_db_connection(self._url()) as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(sql, params)
                 rows = await cur.fetchall()
@@ -341,7 +347,6 @@ class PropertyRepository:
                 cards = []
                 for r in rows:
                     card = dict(r)
-                    # Fetch active automations linked to this property
                     card["active_automations"] = await self._get_property_automations(
                         cur, r["property_id"]
                     )
@@ -373,13 +378,11 @@ class PropertyRepository:
             rows = await cur.fetchall()
             return [r["name"] for r in rows]
         except Exception:
-            # If automations table doesn't exist yet, return empty
             return []
 
     async def get_distinct_cities(self) -> List[str]:
         """Returns distinct city values from properties for filter dropdowns."""
-        db_url = self._url()
-        async with await psycopg.AsyncConnection.connect(db_url) as conn:
+        async with get_db_connection(self._url()) as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute("SELECT DISTINCT city FROM properties WHERE city IS NOT NULL ORDER BY city ASC;")
                 rows = await cur.fetchall()

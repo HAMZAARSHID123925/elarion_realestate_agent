@@ -1,68 +1,78 @@
 """
-Test Suite for Rent Renewal Workflow.
-Tests lease details check, standard 5% renewal calculation, and tenant decision handling.
+Test Suite for Rent Renewal Subgraph Workflow Nodes.
+Tests intent classification, decline handling, and clarification prompt generation.
 """
 import pytest
 import os
 import sys
+from unittest.mock import AsyncMock, patch, MagicMock
 
 # Ensure root directories are on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from app.core_workflows.rent_renewal.graph import rent_renewal_graph
-from app.core_workflows.rent_renewal.nodes import lease_check_node, renewal_offer_node
+from app.core_workflows.rent_renewal.nodes.intent_classification_node import intent_classification_node
+from app.core_workflows.rent_renewal.nodes.decline_node import decline_node
+from app.core_workflows.rent_renewal.nodes.clarification_node import clarification_node
+from app.core_workflows.rent_renewal.renewal_intent.classifier import RenewalIntentResult
 
-def test_rent_renewal_accepted_flow():
-    """Tests rent renewal workflow when tenant accepts the 5% renewal offer."""
-    initial_state = {
-        "tenant_id": "T-201",
-        "current_rent": 80000.0,
-        "renewal_term_months": 12,
-        "messages": [{"role": "user", "content": "Yes, I agree and accept the renewal offer."}],
-        "is_complete": False
+
+@pytest.mark.asyncio
+async def test_intent_classification_node_positive():
+    """Tests intent classification for positive renewal intent."""
+    state = {
+        "tenant_response": "Yes, I would love to renew my lease for another 12 months.",
+        "lease_id": "L-100",
+        "tenant_id": "T-100",
+        "logs": []
     }
 
-    final_state = rent_renewal_graph.invoke(initial_state)
+    mock_result = RenewalIntentResult(
+        intent="YES",
+        confidence=0.95,
+        reasoning="Explicit confirmation to renew",
+        requested_term_months=12,
+        proposed_rent=None
+    )
 
-    assert final_state["current_rent"] == 80000.0
-    assert final_state["offered_rent"] == 84000.0  # 80000 * 1.05
-    assert final_state["tenant_decision"] == "accepted"
-    assert final_state["is_complete"] is True
-    assert "addendum" in final_state["final_response"].lower()
+    with patch("app.core_workflows.rent_renewal.nodes.intent_classification_node.classify_renewal_intent", new=AsyncMock(return_value=mock_result)), \
+         patch("app.core_workflows.rent_renewal.nodes.intent_classification_node.record_renewal_intent", new=AsyncMock()):
 
-def test_rent_renewal_rejected_flow():
-    """Tests rent renewal workflow when tenant rejects/declines the offer."""
-    initial_state = {
-        "tenant_id": "T-202",
-        "current_rent": 100000.0,
-        "renewal_term_months": 12,
-        "messages": [{"role": "user", "content": "No, I am moving out."}],
-        "is_complete": False
+        res = await intent_classification_node(state)
+        assert res["renewal_intent"] == "YES"
+        assert res["renewal_status"] == "PENDING_MANAGER_REVIEW"
+        assert res["intent_confidence"] == 0.95
+
+
+def test_decline_node_execution():
+    """Tests decline node when tenant decides to vacate."""
+    state = {
+        "tenant_id": "T-301",
+        "property_address": "Apartment 4B, Gulberg",
+        "lease_end_date": "2026-09-30",
+        "renewal_intent": "NO",
+        "logs": []
     }
+    res = decline_node(state)
+    assert res["renewal_status"] == "TENANT_DECLINED"
+    assert res["tenant_decision"] == "declined"
+    assert "move-out" in res["final_response"].lower()
 
-    final_state = rent_renewal_graph.invoke(initial_state)
 
-    assert final_state["offered_rent"] == 105000.0
-    assert final_state["tenant_decision"] == "rejected"
-    assert final_state["is_complete"] is True
-    assert "move-out" in final_state["final_response"].lower()
-
-def test_rent_renewal_negotiating_flow():
-    """Tests rent renewal workflow when tenant requests discount/negotiation."""
-    initial_state = {
-        "tenant_id": "T-203",
-        "current_rent": 60000.0,
-        "renewal_term_months": 12,
-        "messages": [{"role": "user", "content": "Can you offer a lower discount rate?"}],
-        "is_complete": False
+def test_clarification_node_execution():
+    """Tests clarification node when tenant response is ambiguous."""
+    state = {
+        "tenant_id": "T-302",
+        "tenant_name": "Hamza",
+        "property_address": "House 12, DHA",
+        "lease_end_date": "2026-10-31",
+        "renewal_intent": "UNCLEAR",
+        "logs": []
     }
+    res = clarification_node(state)
+    assert res["renewal_status"] == "CLARIFICATION_REQUIRED"
+    assert "clarify" in res["final_response"].lower()
 
-    final_state = rent_renewal_graph.invoke(initial_state)
-
-    assert final_state["tenant_decision"] == "negotiating"
-    assert final_state["is_complete"] is True
-    assert "negotiation request" in final_state["final_response"].lower()
 
 if __name__ == "__main__":
     pytest.main(["-v", __file__])

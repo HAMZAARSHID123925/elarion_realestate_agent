@@ -1,56 +1,13 @@
-<<<<<<< HEAD
 version: '3.8'
-services:
-  db:
-    image: postgres:15-alpine
-    container_name: realestate_postgres
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: realestate
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
 
-volumes:
-  postgres_data:
-=======
-
-# Elarion -- docker-compose for the two live application servers.
+# Elarion -- docker-compose for live application servers.
 #
-# What changed vs. before (see production readiness review, items 5.12 / 5.13):
-#   - Before: this file was completely empty -- there was no repeatable,
-#     one-command way to run the app servers, and nothing auto-restarted
-#     them if they crashed.
-#   - Now: whatsapp_server.py and vapi_server.py are defined as services,
-#     each with `restart: unless-stopped` (auto-recovers from a crash) and
-#     a healthcheck against their existing `/health` endpoint.
+# Services defined:
+#   - whatsapp-server: WhatsApp webhook listener & LangGraph channel integration (Port 8003)
+#   - vapi-server: Vapi voice assistant integration server (Port 8002)
 #
-# What's intentionally NOT here:
-#   - A Postgres service. This project does not run a local Postgres --
-#     DATABASE_URL in langgraph_agent/.env already points at a managed,
-#     SSL-enforced cloud Postgres (Neon). So the "weak default DB password
-#     in docker_compose.yaml" issue described in item 5.11 of the review
-#     does not actually apply to this codebase as it stands: there is no
-#     local DB container, and therefore no hardcoded "postgres/password"
-#     to fix. If you ever DO add a local Postgres service here, pull the
-#     password from `${POSTGRES_PASSWORD}` (set in .env) -- never hardcode it.
-#   - mcp_server.py as its own service. It isn't a standalone network
-#     server -- each app process spawns it itself as a stdio subprocess
-#     (see app/orchestrator/maintenance/mcp_client.py connect()), so it
-#     lives inside the whatsapp/vapi containers, not beside them.
-#   - A Dockerfile / prebuilt image. None existed in this project, and per
-#     your instructions I'm not introducing new files outside what the
-#     review named -- so these services build nothing and instead run
-#     directly off your existing source tree via a stock python image and a
-#     `command:`, installing dependencies on container start.
-#     For a real production image, you'll eventually want a proper
-#     Dockerfile with dependencies baked in at build time rather than
-#     installed on every container start -- faster startup, reproducible
-#     builds. Happy to add one when you're ready; didn't want to add files
-#     you didn't ask for yet.
+# Each service includes automatic crash recovery (restart: unless-stopped)
+# and periodic container healthchecks.
 
 services:
   whatsapp-server:
@@ -100,4 +57,3 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
->>>>>>> main

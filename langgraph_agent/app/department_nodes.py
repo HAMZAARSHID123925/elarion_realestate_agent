@@ -18,6 +18,7 @@ write state in a single return value. No LLM call here -- same "deterministic,
 auditable routing" principle rules_engine_node already follows.
 """
 import logging
+from datetime import date
 from typing import Literal, Dict, Any
 
 from langchain_core.messages import HumanMessage

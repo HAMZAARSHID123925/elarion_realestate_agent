@@ -7,7 +7,9 @@ import PropertyCard from '@/components/properties/property-card';
 import PropertyFilterBar from '@/components/properties/property-filter-bar';
 import AddPropertyModal from '@/components/properties/add-property-modal';
 import DeleteConfirmModal from '@/components/properties/delete-confirm-modal';
+import PropertyDetailModal from '@/components/properties/property-detail-modal';
 import { PropertyDashboardCard } from '@/lib/types';
+import { apiClient } from '@/lib/api-client';
 
 function PropertiesPageInner() {
   const {
@@ -17,6 +19,7 @@ function PropertiesPageInner() {
   } = useProperties();
 
   const [showAddModal, setShowAddModal] = useState(false);
+  const [selectedProperty, setSelectedProperty] = useState<PropertyDashboardCard | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
 
   const handleAddSuccess = () => {
@@ -33,7 +36,26 @@ function PropertiesPageInner() {
 
   const handleDeleted = () => {
     setDeleteTarget(null);
+    if (selectedProperty?.property_id === deleteTarget?.id) {
+      setSelectedProperty(null);
+    }
     refetch();
+  };
+
+  const handleToggleStatus = async (propertyId: string, currentStatus: string) => {
+    try {
+      const nextStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
+      await apiClient.togglePropertyStatus(propertyId, nextStatus);
+      if (selectedProperty && selectedProperty.property_id === propertyId) {
+        setSelectedProperty({
+          ...selectedProperty,
+          status: nextStatus,
+        });
+      }
+      refetch();
+    } catch (err) {
+      console.error('Failed to toggle status:', err);
+    }
   };
 
   return (
@@ -130,6 +152,7 @@ function PropertiesPageInner() {
               property={property}
               onDelete={handleDeleteRequest}
               onRefresh={refetch}
+              onViewDetail={(prop) => setSelectedProperty(prop)}
             />
           ))}
         </div>
@@ -140,6 +163,14 @@ function PropertiesPageInner() {
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
         onSuccess={handleAddSuccess}
+      />
+
+      {/* ── Property Detail & Activity Modal ──────────────────────────── */}
+      <PropertyDetailModal
+        property={selectedProperty}
+        isOpen={!!selectedProperty}
+        onClose={() => setSelectedProperty(null)}
+        onToggleStatus={handleToggleStatus}
       />
 
       {/* ── Delete Confirmation Modal ─────────────────────────────────── */}

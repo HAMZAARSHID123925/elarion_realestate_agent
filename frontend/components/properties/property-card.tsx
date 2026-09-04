@@ -24,6 +24,7 @@ interface PropertyCardProps {
   property: PropertyDashboardCard;
   onDelete: (propertyId: string) => void;
   onRefresh: () => void;
+  onViewDetail?: (property: PropertyDashboardCard) => void;
 }
 
 const TYPE_ICONS: Record<string, React.ElementType> = {
@@ -57,7 +58,7 @@ function automationTagIcon(name: string): string {
   return '⚡';
 }
 
-export default function PropertyCard({ property, onDelete, onRefresh }: PropertyCardProps) {
+export default function PropertyCard({ property, onDelete, onRefresh, onViewDetail }: PropertyCardProps) {
   const [toggling, setToggling] = useState(false);
   const statusToken = getPropertyStatusToken(property.status);
   const typeToken = getPropertyTypeToken(property.property_type || '');
@@ -78,12 +79,21 @@ export default function PropertyCard({ property, onDelete, onRefresh }: Property
     }
   };
 
+  const handleCardClick = () => {
+    if (onViewDetail) {
+      onViewDetail(property);
+    }
+  };
+
   return (
-    <div className={`
-      group relative bg-white rounded-2xl border border-slate-200
-      shadow-sm hover:shadow-lg hover:border-teal-200/60 hover:-translate-y-0.5
-      transition-all duration-300 ease-out flex flex-col overflow-hidden
-    `}>
+    <div
+      onClick={handleCardClick}
+      className={`
+        group relative bg-white rounded-2xl border border-slate-200
+        shadow-sm hover:shadow-lg hover:border-teal-200/60 hover:-translate-y-0.5
+        transition-all duration-300 ease-out flex flex-col overflow-hidden cursor-pointer
+      `}
+    >
       {/* ── Card Header ──────────────────────────────────────────── */}
       <div className="p-5 pb-0">
         <div className="flex items-start justify-between gap-3">
@@ -93,7 +103,7 @@ export default function PropertyCard({ property, onDelete, onRefresh }: Property
               <TypeIcon size={20} className={typeToken.iconColor} />
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="font-bold text-slate-900 text-base leading-tight truncate">
+              <h3 className="font-bold text-slate-900 text-base leading-tight truncate group-hover:text-teal-600 transition-colors">
                 {property.title || 'Untitled Property'}
               </h3>
               <p className="text-xs text-slate-500 mt-0.5 truncate">
@@ -161,9 +171,16 @@ export default function PropertyCard({ property, onDelete, onRefresh }: Property
       {/* ── Card Footer ──────────────────────────────────────────── */}
       <div className="mt-auto border-t border-slate-100 px-5 py-3 flex items-center justify-between">
         {/* View Activity Button */}
-        <button className="flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-teal-600 transition-colors group/btn">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onViewDetail) onViewDetail(property);
+          }}
+          className="flex items-center gap-1.5 text-sm font-semibold text-teal-600 hover:text-teal-700 transition-colors group/btn"
+        >
           <span>View Property Activity</span>
-          <ArrowRight size={14} className="transition-transform group-hover/btn:translate-x-0.5" />
+          <ArrowRight size={14} className="transition-transform group-hover/btn:translate-x-1" />
         </button>
 
         {/* Action Buttons */}

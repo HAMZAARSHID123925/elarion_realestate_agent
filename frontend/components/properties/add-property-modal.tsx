@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Plus, Building2, Loader2, CheckCircle2 } from 'lucide-react';
+import { X, Plus, Building2, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { PropertyCreatePayload } from '@/lib/types';
 import { apiClient } from '@/lib/api-client';
 
@@ -25,11 +25,12 @@ const INITIAL_FORM: PropertyCreatePayload = {
   property_type: 'house',
   price_lakhs: 0,
   status: 'Active',
-  units_count: 0,
+  units_count: 1,
 };
 
 export default function AddPropertyModal({ isOpen, onClose, onSuccess }: AddPropertyModalProps) {
   const [form, setForm] = useState<PropertyCreatePayload>({ ...INITIAL_FORM });
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -39,6 +40,7 @@ export default function AddPropertyModal({ isOpen, onClose, onSuccess }: AddProp
   useEffect(() => {
     if (isOpen) {
       setForm({ ...INITIAL_FORM });
+      setFieldErrors({});
       setError(null);
       setSuccess(false);
       setTimeout(() => titleRef.current?.focus(), 150);
@@ -47,23 +49,51 @@ export default function AddPropertyModal({ isOpen, onClose, onSuccess }: AddProp
 
   const handleChange = (field: keyof PropertyCreatePayload, value: string | number) => {
     setForm((prev) => ({ ...prev, [field]: value }));
+    if (fieldErrors[field]) {
+      setFieldErrors((prev) => {
+        const updated = { ...prev };
+        delete updated[field];
+        return updated;
+      });
+    }
     setError(null);
   };
 
-  const validate = (): string | null => {
-    if (!form.title.trim()) return 'Property title is required.';
-    if (!form.address.trim()) return 'Address is required.';
-    if (!form.city.trim()) return 'City is required.';
-    if (form.price_lakhs < 0) return 'Price cannot be negative.';
-    if (form.units_count < 0) return 'Units count cannot be negative.';
-    return null;
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+
+    if (!form.title.trim()) {
+      errors.title = 'Property title is required (minimum 3 characters).';
+    } else if (form.title.trim().length < 3) {
+      errors.title = 'Property title must be at least 3 characters.';
+    }
+
+    if (!form.address.trim()) {
+      errors.address = 'Street address is required.';
+    } else if (form.address.trim().length < 5) {
+      errors.address = 'Please enter a complete address.';
+    }
+
+    if (!form.city.trim()) {
+      errors.city = 'City is required.';
+    }
+
+    if (form.price_lakhs === undefined || isNaN(form.price_lakhs) || form.price_lakhs < 0) {
+      errors.price_lakhs = 'Price must be a valid positive amount.';
+    }
+
+    if (form.units_count === undefined || isNaN(form.units_count) || form.units_count < 0) {
+      errors.units_count = 'Units count must be 0 or greater.';
+    }
+
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const validationError = validate();
-    if (validationError) {
-      setError(validationError);
+    if (!validateForm()) {
+      setError('Please resolve the highlighted validation errors.');
       return;
     }
 
@@ -76,9 +106,10 @@ export default function AddPropertyModal({ isOpen, onClose, onSuccess }: AddProp
         onSuccess();
         onClose();
       }, 800);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to create property:', err);
-      setError(err.message || 'Failed to create property. Please try again.');
+      const msg = err instanceof Error ? err.message : 'Failed to create property. Please try again.';
+      setError(msg);
     } finally {
       setSaving(false);
     }
@@ -128,8 +159,15 @@ export default function AddPropertyModal({ isOpen, onClose, onSuccess }: AddProp
               value={form.title}
               onChange={(e) => handleChange('title', e.target.value)}
               placeholder="e.g. Sunset Apartments"
-              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+              className={`w-full px-4 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 transition-all ${
+                fieldErrors.title
+                  ? 'border-red-300 bg-red-50/30 focus:border-red-500 focus:ring-red-500/20'
+                  : 'border-slate-200 bg-slate-50/50 focus:border-teal-500 focus:ring-teal-500/20'
+              }`}
             />
+            {fieldErrors.title && (
+              <p className="text-xs text-red-500 mt-1 font-medium">{fieldErrors.title}</p>
+            )}
           </div>
 
           {/* Address */}
@@ -142,8 +180,15 @@ export default function AddPropertyModal({ isOpen, onClose, onSuccess }: AddProp
               value={form.address}
               onChange={(e) => handleChange('address', e.target.value)}
               placeholder="e.g. 123 Main Street, Block A"
-              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+              className={`w-full px-4 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 transition-all ${
+                fieldErrors.address
+                  ? 'border-red-300 bg-red-50/30 focus:border-red-500 focus:ring-red-500/20'
+                  : 'border-slate-200 bg-slate-50/50 focus:border-teal-500 focus:ring-teal-500/20'
+              }`}
             />
+            {fieldErrors.address && (
+              <p className="text-xs text-red-500 mt-1 font-medium">{fieldErrors.address}</p>
+            )}
           </div>
 
           {/* City + Property Type row */}
@@ -157,8 +202,15 @@ export default function AddPropertyModal({ isOpen, onClose, onSuccess }: AddProp
                 value={form.city}
                 onChange={(e) => handleChange('city', e.target.value)}
                 placeholder="e.g. Lahore"
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+                className={`w-full px-4 py-2.5 rounded-xl border text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 transition-all ${
+                  fieldErrors.city
+                    ? 'border-red-300 bg-red-50/30 focus:border-red-500 focus:ring-red-500/20'
+                    : 'border-slate-200 bg-slate-50/50 focus:border-teal-500 focus:ring-teal-500/20'
+                }`}
               />
+              {fieldErrors.city && (
+                <p className="text-xs text-red-500 mt-1 font-medium">{fieldErrors.city}</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">
@@ -188,8 +240,15 @@ export default function AddPropertyModal({ isOpen, onClose, onSuccess }: AddProp
                 onChange={(e) => handleChange('price_lakhs', parseFloat(e.target.value) || 0)}
                 min="0"
                 step="0.1"
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+                className={`w-full px-4 py-2.5 rounded-xl border text-sm text-slate-800 focus:outline-none focus:ring-2 transition-all ${
+                  fieldErrors.price_lakhs
+                    ? 'border-red-300 bg-red-50/30 focus:border-red-500 focus:ring-red-500/20'
+                    : 'border-slate-200 bg-slate-50/50 focus:border-teal-500 focus:ring-teal-500/20'
+                }`}
               />
+              {fieldErrors.price_lakhs && (
+                <p className="text-xs text-red-500 mt-1 font-medium">{fieldErrors.price_lakhs}</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">
@@ -200,8 +259,15 @@ export default function AddPropertyModal({ isOpen, onClose, onSuccess }: AddProp
                 value={form.units_count}
                 onChange={(e) => handleChange('units_count', parseInt(e.target.value) || 0)}
                 min="0"
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+                className={`w-full px-4 py-2.5 rounded-xl border text-sm text-slate-800 focus:outline-none focus:ring-2 transition-all ${
+                  fieldErrors.units_count
+                    ? 'border-red-300 bg-red-50/30 focus:border-red-500 focus:ring-red-500/20'
+                    : 'border-slate-200 bg-slate-50/50 focus:border-teal-500 focus:ring-teal-500/20'
+                }`}
               />
+              {fieldErrors.units_count && (
+                <p className="text-xs text-red-500 mt-1 font-medium">{fieldErrors.units_count}</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">
@@ -220,16 +286,17 @@ export default function AddPropertyModal({ isOpen, onClose, onSuccess }: AddProp
 
           {/* Error Message */}
           {error && (
-            <div className="px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-sm text-red-600 font-medium">
+            <div className="px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-600 font-medium flex items-center gap-2">
+              <AlertCircle size={15} />
               {error}
             </div>
           )}
 
           {/* Success Message */}
           {success && (
-            <div className="px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-700 font-medium flex items-center gap-2">
+            <div className="px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-700 font-medium flex items-center gap-2">
               <CheckCircle2 size={16} />
-              Property created successfully!
+              Property created and saved to database successfully!
             </div>
           )}
 
