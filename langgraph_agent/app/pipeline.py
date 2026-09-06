@@ -75,8 +75,10 @@ def entry_router(state: PipelineState) -> str:
         raw_text = (request.raw_text if request else "").lower().strip()
         
         # Check if the user is raising an emergency or asking an explicit FAQ question
-        faq_keywords = ["policy", "pet", "hours", "rent payment", "deposit", "rules", "billing", "how do i pay"]
-        emergency_keywords = ["gas smell", "gas leak", "active flooding", "fire", "burst", "smoke", "carbon monoxide", "no heat"]
+        # NOTE: Do NOT use single word "pet" here -- maintenance slot collection explicitly
+        # asks "Are there any pets?", so "no pets" / "have a pet" would falsely trigger an FAQ switch.
+        faq_keywords = ["pet policy", "pet fee", "office hours", "rent payment", "deposit refund", "building rules", "billing inquiry", "how do i pay"]
+        emergency_keywords = ["gas smell", "gas leak", "active flooding", "fire", "burst pipe", "smoke", "carbon monoxide", "no heat"]
         
         is_faq_switch = any(kw in raw_text for kw in faq_keywords)
         is_emergency_switch = any(kw in raw_text for kw in emergency_keywords)

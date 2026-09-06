@@ -21,7 +21,7 @@ from langchain_groq import ChatGroq
 
 logger = logging.getLogger(__name__)
 
-CONFIDENCE_THRESHOLD = 0.65  # lower threshold as Gemini short text similarity is typically 0.6-0.7
+CONFIDENCE_THRESHOLD = 0.50  # relaxed threshold; subsequent groundedness check validates relevance
 TOP_K = 6                     # design doc section 4 -- retriever top-k (4-6)
 
 PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "elarion-faq")
@@ -36,8 +36,8 @@ GEMINI_EMBEDDING_DIMENSION = 768
 
 def get_llm():
     """Same convention as maintenance/nodes/common.py -- Groq, temperature 0."""
-    model_name = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
-    return ChatGroq(model=model_name, temperature=0)
+    model_name = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+    return ChatGroq(model=model_name, temperature=0, max_tokens=400)
 
 
 # Reuse the same rate limiter as the rest of the orchestrator, so FAQ's Groq

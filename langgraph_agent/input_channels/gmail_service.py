@@ -322,11 +322,16 @@ class GmailAgentService:
         logger.info(f"Executing LangGraph pipeline for user_id='{sender_email}'...")
         start_time = time.time()
         
+        # Include subject for initial emails to give full context to triage classifier
+        query_text = clean_body
+        if subject and not subject.lower().startswith("re:") and not subject.lower().startswith("fwd:"):
+            query_text = f"{subject}: {clean_body}"
+
         try:
             final_response = await handle_request(
                 channel="email",
                 user_id=sender_email,
-                raw_text=clean_body,
+                raw_text=query_text,
                 channel_metadata=channel_metadata
             )
             elapsed = time.time() - start_time

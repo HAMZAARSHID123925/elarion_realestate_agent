@@ -15,25 +15,28 @@ async def request_builder_node(state: MaintenanceState) -> Dict[str, Any]:
     
     # If we didn't identify them at the start but got their name/unit during chat, try to resolve it now
     # to avoid PostgreSQL foreign key constraint errors
-    if not db_tenant_id and tenant_identity:
+    if not db_tenant_id or not db_unit_id:
         try:
-            # 1. Try to lookup by exact name
-            result_json = await mcp_client.call_tool("lookup_tenant_by_name", {"name": tenant_identity})
-            result = json.loads(result_json) if result_json else {}
+            # 1. Try to lookup by exact name if available
+            if tenant_identity:
+                result_json = await mcp_client.call_tool("lookup_tenant_by_name", {"name": tenant_identity})
+                result = json.loads(result_json) if result_json else {}
+                if "error" not in result:
+                    db_tenant_id = result.get("tenant_id")
+                    db_unit_id = result.get("unit_id")
             
-            # 2. If name was misspelled (Jhon vs John), fallback to looking up whoever lives in that unit
-            if "error" in result and state.get("property_unit"):
+            # 2. Lookup by unit if property_unit is known (e.g. 'Unit 204', '204', 'U-204')
+            if not db_unit_id and state.get("property_unit"):
                 result_json = await mcp_client.call_tool("lookup_tenant_by_unit", {"unit_id": state.get("property_unit")})
                 result = json.loads(result_json) if result_json else {}
-                
-            if "error" not in result:
-                db_tenant_id = result.get("tenant_id")
-                db_unit_id = result.get("unit_id")
-                logger.info(f"Resolved tenant for {tenant_identity}/{state.get('property_unit')} -> {db_tenant_id}")
-            else:
-                logger.warning(f"Could not resolve tenant ID for {tenant_identity} / {state.get('property_unit')}")
+                if "error" not in result:
+                    db_tenant_id = result.get("tenant_id") or db_tenant_id
+                    db_unit_id = result.get("unit_id")
+                    logger.info(f"Resolved tenant for unit {state.get('property_unit')} -> tenant={db_tenant_id}, unit={db_unit_id}")
+                else:
+                    logger.warning(f"Could not resolve unit in DB for: {state.get('property_unit')}")
         except Exception as e:
-            logger.error(f"Failed to resolve tenant: {e}")
+            logger.error(f"Failed to resolve tenant/unit: {e}")
 
     payload = {
         # Only ever use resolved DB IDs here -- tenant_identity/property_unit are raw

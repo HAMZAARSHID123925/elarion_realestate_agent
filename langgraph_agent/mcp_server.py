@@ -127,40 +127,62 @@ async def lookup_tenant_by_name(name: str) -> str:
 @mcp.tool()
 async def lookup_tenant_by_unit(unit_id: str) -> str:
     """
-    Look up a tenant by their unit_id.
+    Look up a tenant by their unit_id, unit_number, or mention (e.g. 'Unit 204', '204', 'U-204').
     Returns tenant_id, name, unit_id, and property_id.
     """
+    if not unit_id:
+        return json.dumps({"error": "Unit not specified"})
+
+    import re
+    clean_val = str(unit_id).strip()
+    norm = re.sub(r'(?i)^(unit|apt|apartment|house|flat|u)[\s\-#]*', '', clean_val).strip()
+
     db_pool = await get_pool()
     async with db_pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
-                SELECT t.tenant_id, t.name, t.unit_id, u.property_id
-                FROM   tenants t
-                JOIN   units   u ON u.unit_id = t.unit_id
-                WHERE  t.unit_id = %s
+                SELECT t.tenant_id, t.name, u.unit_id, u.property_id
+                FROM   units u
+                LEFT JOIN tenants t ON t.unit_id = u.unit_id
+                WHERE  u.unit_id ILIKE %s
+                   OR  u.unit_number ILIKE %s
+                   OR  u.unit_id ILIKE %s
+                   OR  u.unit_number ILIKE %s
+                   OR  %s ILIKE '%%' || u.unit_number || '%%'
+                   OR  %s ILIKE '%%' || u.unit_id || '%%'
+                ORDER BY t.tenant_id NULLS LAST
+                LIMIT 1
                 """,
-                (unit_id,),
+                (clean_val, clean_val, f"%{norm}%", f"%{norm}%", clean_val, clean_val),
             )
             row = await cur.fetchone()
 
     if row:
+        fallback_tenant_id = row[0] or f"T-{row[2].replace('U-', '') if row[2] else 'GUEST'}"
         return json.dumps({
-            "tenant_id":   row[0],
-            "name":        row[1],
+            "tenant_id":   fallback_tenant_id,
+            "name":        row[1] or "Resident",
             "unit_id":     row[2],
             "property_id": row[3],
         })
-    return json.dumps({"error": "Tenant not found"})
+    return json.dumps({"error": "Tenant / Unit not found"})
 
 
 # ── Tool: lookup_property ─────────────────────────────────────────────
 @mcp.tool()
 async def lookup_property(unit_id: str) -> str:
     """
-    Look up a property by unit_id (joins units to properties).
+    Look up a property by unit_id or unit_number (joins units to properties).
     Returns unit_id, property_id, address, unit_number.
     """
+    if not unit_id:
+        return json.dumps({"error": "Unit not specified"})
+
+    import re
+    clean_val = str(unit_id).strip()
+    norm = re.sub(r'(?i)^(unit|apt|apartment|house|flat|u)[\s\-#]*', '', clean_val).strip()
+
     db_pool = await get_pool()
     async with db_pool.connection() as conn:
         async with conn.cursor() as cur:
@@ -169,9 +191,15 @@ async def lookup_property(unit_id: str) -> str:
                 SELECT u.unit_id, u.property_id, p.address, u.unit_number
                 FROM   units      u
                 JOIN   properties p ON p.property_id = u.property_id
-                WHERE  u.unit_id = %s
+                WHERE  u.unit_id ILIKE %s
+                   OR  u.unit_number ILIKE %s
+                   OR  u.unit_id ILIKE %s
+                   OR  u.unit_number ILIKE %s
+                   OR  %s ILIKE '%%' || u.unit_number || '%%'
+                   OR  %s ILIKE '%%' || u.unit_id || '%%'
+                LIMIT 1
                 """,
-                (unit_id,),
+                (clean_val, clean_val, f"%{norm}%", f"%{norm}%", clean_val, clean_val),
             )
             row = await cur.fetchone()
 

@@ -23,6 +23,7 @@ class MaintenanceState(TypedDict):
     
     # State tracking
     missing_slots: List[str]
+    last_asked_slot: Optional[str]
     ticket_payload: Optional[Dict[str, Any]]
     escalation_record: Optional[Dict[str, Any]]
     ticket_creation_status: Optional[str]

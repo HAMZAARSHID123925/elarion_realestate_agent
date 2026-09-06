@@ -114,38 +114,65 @@ async def run_maintenance(state: PipelineState, config: RunnableConfig) -> Dict[
     request = state["request"]
     sub_graph = await _get_maintenance_graph()
 
-    # Build the sub_input starting with the new user message.
+    prev = state.get("department_result") or {}
+    prev_messages = prev.get("messages") or []
+    current_human = HumanMessage(content=request.raw_text)
+
+    # Build the sub_input accumulating messages across multi-turn slot filling
     sub_input: Dict[str, Any] = {
-        "messages": [HumanMessage(content=request.raw_text)],
+        "messages": list(prev_messages) + [current_human],
         "user_id": request.user_id,
     }
 
     # On follow-up turns (active_department == "maintenance"), carry over every
     # slot that was already extracted in a previous turn.
-    prev = state.get("department_result") or {}
     for slot in [
         "tenant_identity", "property_unit", "issue_category",
         "issue_description", "urgency", "permission_to_enter",
         "pets_present", "db_tenant_id", "db_unit_id",
         "ticket_payload", "created_ticket_id", "missing_slots",
+        "last_asked_slot",
     ]:
         if prev.get(slot) is not None:
             sub_input[slot] = prev[slot]
 
+    # If orchestrator resolved an unregistered contact to a known tenant, pass credentials to sub_input
+    user_profile = state.get("user_profile") or {}
+    if user_profile.get("status") == "known":
+        if "db_tenant_id" not in sub_input and user_profile.get("user_id"):
+            sub_input["db_tenant_id"] = user_profile.get("user_id")
+        if "db_unit_id" not in sub_input and user_profile.get("unit_id"):
+            sub_input["db_unit_id"] = user_profile.get("unit_id")
+        if "tenant_identity" not in sub_input and user_profile.get("name"):
+            sub_input["tenant_identity"] = user_profile.get("name")
+        if "property_unit" not in sub_input and user_profile.get("unit_id"):
+            sub_input["property_unit"] = user_profile.get("unit_id")
+
     result = await sub_graph.ainvoke(sub_input, config)
 
+    created_id = result.get("created_ticket_id")
     is_complete = (
         bool(result.get("escalation_record"))
-        or bool(result.get("created_ticket_id") and result.get("assignment_status"))
+        or bool(created_id)
         or result.get("ticket_creation_status") == "error"
     )
     active_dept = None if is_complete else "maintenance"
 
+    final_resp = result.get("final_response")
+    if not final_resp:
+        if created_id:
+            final_resp = f"Thank you! Your maintenance ticket #{created_id} has been successfully logged. Our property management team is reviewing it and will dispatch a technician shortly."
+        else:
+            final_resp = "Your maintenance request has been logged and is being reviewed."
+
+    # Preserve accumulated messages in department_result for subsequent turns if still in progress
+    if not is_complete:
+        result["messages"] = sub_input["messages"]
+
     return {
         "active_department": active_dept,
         "department_result": None if is_complete else result,
-        "final_response": result.get("final_response")
-        or "Your maintenance request has been logged and is being reviewed.",
+        "final_response": final_resp,
     }
 
 
@@ -213,13 +240,31 @@ async def run_rent_reminder(state: PipelineState, config: RunnableConfig) -> Dic
 
 
 def fallback_node(state: PipelineState) -> Dict[str, Any]:
-    """Catches leasing / general / anything with no built department yet --
-    same honest behaviour as rules_engine_node's own general_inquiry branch,
-    just surfaced through the master graph instead of dead-ending silently."""
-    response = state.get("response")
-    msg = (
-        response.response_message
-        if response
-        else "Thanks for reaching out -- a member of our team will follow up shortly."
-    )
+    """Catches leasing / general / anything with no built department yet.
+
+    Smart guest-user handling: if the user's contact is not in our database
+    (status = 'unknown'), we ask them to self-identify (name + unit / ID)
+    instead of giving a generic 'team member will follow up' message.
+    This turns a dead-end into a productive conversation.
+    """
+    user_profile = state.get("user_profile") or {}
+    is_unknown = user_profile.get("status") == "unknown"
+    intent = state.get("intent", "general")
+
+    if is_unknown:
+        # Professional self-identification request for unregistered contacts
+        msg = (
+            "Welcome to Elarion Real Estate Support! "
+            "I couldn't find your contact information in our records. "
+            "To assist you with maintenance, rent, or lease inquiries, could you please provide: "
+            "your full name, unit number (e.g. Unit 204), and the nature of your request? "
+            "Once I verify your details, I'll be happy to help right away."
+        )
+    else:
+        response = state.get("response")
+        msg = (
+            response.response_message
+            if response
+            else "Thanks for reaching out -- a member of our team will follow up shortly."
+        )
     return {"active_department": None, "final_response": msg}

@@ -17,7 +17,7 @@ from app.core_workflows.maintenance.nodes import (
 )
 
 def priority_router(state: MaintenanceState):
-    if state.get("urgency") in ("emergency", "high"):
+    if state.get("urgency") == "emergency":
         return "escalation"
     return "validation"
 
