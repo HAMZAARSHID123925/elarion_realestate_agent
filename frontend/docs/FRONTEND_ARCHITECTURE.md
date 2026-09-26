@@ -20,3 +20,14 @@ This directory (`frontend/docs/`) contains all frontend-specific documentation, 
 - `/agent-activity` ➔ `GET /api/v1/dashboard/agent-activity`
 - `/properties` ➔ `GET /api/v1/properties/dashboard` & `POST /api/v1/properties` & `DELETE /api/v1/properties/{id}` & `PATCH /api/v1/properties/{id}/status`
 
+---
+
+## Documentation Index
+- [Chunk 1: Database Migration & Dashboard Engine](file:///d:/ELARION/elarion_realestate_agent/frontend/docs/CHUNK_1_BACKEND_DASHBOARD_ENGINE.md)
+- [Chunk 2: Overview Dashboard UI](file:///d:/ELARION/elarion_realestate_agent/frontend/docs/CHUNK_2_OVERVIEW_DASHBOARD.md)
+- [Chunk 3: Conversations Page](file:///d:/ELARION/elarion_realestate_agent/frontend/docs/CHUNK_3_CONVERSATIONS_PAGE.md)
+- [Chunk 4: Automations Grid & Rules Engine](file:///d:/ELARION/elarion_realestate_agent/frontend/docs/CHUNK_4_AUTOMATIONS_PAGE.md)
+- [Chunk 5: Properties Dashboard Page](file:///d:/ELARION/elarion_realestate_agent/frontend/docs/CHUNK_5_PROPERTIES_PAGE.md)
+- [Chunk 6: Agent Activity & Audit Operations Route](file:///d:/ELARION/elarion_realestate_agent/frontend/docs/CHUNK_6_AGENT_ACTIVITY_PAGE.md)
+
+

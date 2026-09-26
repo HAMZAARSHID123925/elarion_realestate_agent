@@ -16,6 +16,14 @@ from typing import Optional
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
+import sys
+import asyncio
+if sys.platform == "win32":
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except Exception:
+        pass
+
 import psycopg
 from psycopg_pool import AsyncConnectionPool
 

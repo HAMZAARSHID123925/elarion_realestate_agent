@@ -139,6 +139,12 @@ export interface AgentActivityData {
     status: string;
     badge: string;
     timestamp: string;
+    channel?: string;
+    tenant_name?: string;
+    property_name?: string;
+    unit_number?: string;
+    urgency?: string;
+    human_intervention?: string;
   }>;
 }
 

@@ -1,91 +1,111 @@
 'use client';
 
-import React from 'react';
-import { Users, Activity, Sparkles, ArrowRight, ShieldCheck, Clock, CheckCircle2 } from 'lucide-react';
-import Link from 'next/link';
+import React, { useState, useEffect, useCallback } from 'react';
+import { apiClient } from '@/lib/api-client';
+import { AgentActivityData } from '@/lib/types';
+import ActivityHeader from '@/components/agent-activity/activity-header';
+import ActivityMetrics from '@/components/agent-activity/activity-metrics';
+import AgentPerformanceGrid from '@/components/agent-activity/agent-performance-grid';
+import ActivityFeed from '@/components/agent-activity/activity-feed';
+import ActivityDetailDrawer from '@/components/agent-activity/activity-detail-drawer';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 
 export default function AgentActivityPage() {
+  const [data, setData] = useState<AgentActivityData | null>(null);
+  const [period, setPeriod] = useState<string>('today');
+  const [selectedAgent, setSelectedAgent] = useState<string>('all');
+  const [selectedExecution, setSelectedExecution] = useState<any | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async (selectedPeriod: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await apiClient.getAgentActivity(selectedPeriod);
+      setData(response);
+    } catch (err: any) {
+      console.error('Failed to load agent activity:', err);
+      setError(err?.message || 'Unable to connect to FastAPI backend');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData(period);
+  }, [fetchData, period]);
+
+  const handlePeriodChange = (newPeriod: string) => {
+    setPeriod(newPeriod);
+  };
+
   return (
-    <div className="space-y-8 max-w-6xl mx-auto pb-12">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600 shadow-sm">
-            <Users size={22} />
+    <div className="space-y-6 max-w-7xl mx-auto pb-16">
+      {/* 1. Header with Period Selectors */}
+      <ActivityHeader
+        period={period}
+        onPeriodChange={handlePeriodChange}
+        onRefresh={() => fetchData(period)}
+        isLoading={isLoading}
+      />
+
+      {/* Error Banner with Retry */}
+      {error && (
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={16} />
+            <span>
+              <strong>Backend Error:</strong> {error}
+            </span>
           </div>
-          <div>
-            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Agent Activity</h1>
-            <p className="text-sm text-slate-500 font-medium mt-0.5">
-              Real-time monitoring and execution analytics across all AI agent workflows.
-            </p>
-          </div>
+          <button
+            onClick={() => fetchData(period)}
+            className="flex items-center gap-1 font-bold underline hover:text-rose-900"
+          >
+            <RefreshCw size={12} />
+            Retry
+          </button>
         </div>
+      )}
 
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          Live Agent Monitoring
-        </span>
-      </div>
-
-      {/* Metric Highlights */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Active Workers</span>
-            <Activity size={16} className="text-teal-600" />
+      {/* Loading Skeleton */}
+      {isLoading && !data ? (
+        <div className="space-y-6 animate-pulse">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-28 bg-slate-200/70 rounded-2xl" />
+            ))}
           </div>
-          <p className="text-2xl font-extrabold text-slate-900 mt-2">4 Workflows</p>
-          <p className="text-xs text-slate-500 mt-1">Maintenance, FAQ, Renewal & Rent Reminders</p>
+          <div className="h-44 bg-slate-200/70 rounded-2xl" />
+          <div className="h-80 bg-slate-200/70 rounded-2xl" />
         </div>
+      ) : data ? (
+        <>
+          {/* 2. Top Metric KPI Cards */}
+          <ActivityMetrics metrics={data.metrics} />
 
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Orchestration Health</span>
-            <ShieldCheck size={16} className="text-emerald-600" />
-          </div>
-          <p className="text-2xl font-extrabold text-emerald-600 mt-2">100% Operational</p>
-          <p className="text-xs text-slate-500 mt-1">LangGraph Layer 2 & 3 state persistence</p>
-        </div>
+          {/* 3. Agent Workforce Performance Breakdown */}
+          <AgentPerformanceGrid
+            performance={data.workflow_performance}
+            selectedAgent={selectedAgent}
+            onSelectAgent={setSelectedAgent}
+          />
 
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Average Turn Latency</span>
-            <Clock size={16} className="text-blue-600" />
-          </div>
-          <p className="text-2xl font-extrabold text-slate-900 mt-2">&lt; 1.2s</p>
-          <p className="text-xs text-slate-500 mt-1">FastAPI async worker response time</p>
-        </div>
-      </div>
+          {/* 4. Real-Time Autonomous Action Audit Feed */}
+          <ActivityFeed
+            executions={data.recent_executions}
+            selectedAgent={selectedAgent}
+            onSelectExecution={setSelectedExecution}
+          />
 
-      {/* Feature Roadmap Card */}
-      <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl p-8 shadow-xl">
-        <div className="max-w-2xl">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-500/20 text-teal-300 text-xs font-semibold mb-4 border border-teal-500/30">
-            <Sparkles size={13} />
-            Telemetry & Deep Tracing
-          </div>
-          <h2 className="text-xl font-bold tracking-tight">Granular Execution Timeline & Token Usage</h2>
-          <p className="text-sm text-slate-300 mt-2 leading-relaxed">
-            Full LangSmith trace playback, human-in-the-loop audit logs, and per-property agent utilization breakdown will appear here in the upcoming release.
-          </p>
-
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link
-              href="/overview"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-900 text-xs font-bold transition-all shadow-md"
-            >
-              <span>View Overview Summary</span>
-              <ArrowRight size={14} />
-            </Link>
-            <Link
-              href="/automations"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-all"
-            >
-              <span>Manage Automation Rules</span>
-            </Link>
-          </div>
-        </div>
-      </div>
+          {/* 5. Detail Drawer Modal */}
+          <ActivityDetailDrawer
+            execution={selectedExecution}
+            onClose={() => setSelectedExecution(null)}
+          />
+        </>
+      ) : null}
     </div>
   );
 }
